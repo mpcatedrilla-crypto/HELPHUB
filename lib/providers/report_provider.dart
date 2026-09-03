@@ -43,7 +43,7 @@ class ReportProvider extends ChangeNotifier {
 
       final response = await _supabase
           .from('reports')
-          .select('*, concern_types(category_name)')
+          .select('*, concern_types(category_name), report_evidence(storage_path)')
           .eq('resident_id', userId)
           .order('created_at', ascending: false);
       
@@ -61,7 +61,7 @@ class ReportProvider extends ChangeNotifier {
       // Order by priority score descending, then created_at
       final response = await _supabase
           .from('reports')
-          .select('*, concern_types(category_name), profiles(full_name)')
+          .select('*, concern_types(category_name), profiles(full_name), report_evidence(storage_path)')
           .order('is_critical_override', ascending: false)
           .order('priority_score', ascending: false)
           .order('created_at', ascending: true);
@@ -72,6 +72,10 @@ class ReportProvider extends ChangeNotifier {
     } finally {
       _setLoading(false);
     }
+  }
+
+  String getEvidenceUrl(String storagePath) {
+    return _supabase.storage.from('evidence').getPublicUrl(storagePath);
   }
 
   Future<bool> submitReport({

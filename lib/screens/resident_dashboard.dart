@@ -151,10 +151,12 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
                       if (report['status'] == 'resolved') statusColor = AppTheme.statusResolved;
                       
                       return _buildReportListTile(
+                        context,
                         report['title'] ?? 'No Title',
                         report['concern_types'] != null ? report['concern_types']['category_name'] : 'Other',
                         report['status'] ?? 'Unknown',
                         statusColor,
+                        report['report_evidence'],
                       ).animate().fade(duration: 400.ms).slideX(delay: (entry.key * 100).ms);
                     }),
                   
@@ -229,32 +231,62 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
     );
   }
 
-  Widget _buildReportListTile(String title, String subtitle, String status, Color statusColor) {
+  Widget _buildReportListTile(BuildContext context, String title, String subtitle, String status, Color statusColor, List<dynamic>? evidence) {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        leading: Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: AppTheme.surfaceColor,
-            borderRadius: BorderRadius.circular(8),
+      child: Column(
+        children: [
+          ListTile(
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            leading: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: AppTheme.surfaceColor,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.report, color: AppTheme.primaryBlue),
+            ),
+            title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+            subtitle: Text(subtitle),
+            trailing: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: statusColor.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Text(
+                status.toUpperCase(),
+                style: TextStyle(color: statusColor, fontWeight: FontWeight.bold, fontSize: 10),
+              ),
+            ),
           ),
-          child: const Icon(Icons.report, color: AppTheme.primaryBlue),
-        ),
-        title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
-        subtitle: Text(subtitle),
-        trailing: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            color: statusColor.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Text(
-            status.toUpperCase(),
-            style: TextStyle(color: statusColor, fontWeight: FontWeight.bold, fontSize: 10),
-          ),
-        ),
+          if (evidence != null && evidence.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(left: 16, right: 16, bottom: 16),
+              child: SizedBox(
+                height: 80,
+                child: ListView.builder(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: evidence.length,
+                  itemBuilder: (context, index) {
+                    final storagePath = evidence[index]['storage_path'];
+                    final url = Provider.of<ReportProvider>(context, listen: false).getEvidenceUrl(storagePath);
+                    return Container(
+                      margin: const EdgeInsets.only(right: 8),
+                      width: 80,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(8),
+                        image: DecorationImage(
+                          image: NetworkImage(url),
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
