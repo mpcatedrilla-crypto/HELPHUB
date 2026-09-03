@@ -5,6 +5,7 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../providers/report_provider.dart';
 import '../theme/app_theme.dart';
 
@@ -88,6 +89,17 @@ class _ConcernReportingFormState extends State<ConcernReportingForm> {
 
   Future<void> _pickImage(ImageSource source) async {
     try {
+      if (source == ImageSource.camera) {
+        var status = await Permission.camera.status;
+        if (!status.isGranted) {
+          status = await Permission.camera.request();
+          if (!status.isGranted) {
+            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Camera permission is required.')));
+            return;
+          }
+        }
+      }
+
       final XFile? image = await _picker.pickImage(source: source, imageQuality: 70);
       if (image != null) {
         setState(() {
