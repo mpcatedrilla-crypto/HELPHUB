@@ -20,9 +20,22 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      Provider.of<ReportProvider>(context, listen: false).fetchAllReports();
-      Provider.of<AdminProvider>(context, listen: false).fetchRoutingDestinations();
+      final reportProvider = Provider.of<ReportProvider>(context, listen: false);
+      final adminProvider = Provider.of<AdminProvider>(context, listen: false);
+      
+      reportProvider.fetchAllReports();
+      adminProvider.fetchRoutingDestinations();
+      
+      adminProvider.startListeningForEmergencies(() {
+        if (mounted) reportProvider.fetchAllReports();
+      });
     });
+  }
+
+  @override
+  void dispose() {
+    Provider.of<AdminProvider>(context, listen: false).stopListeningForEmergencies();
+    super.dispose();
   }
 
   @override

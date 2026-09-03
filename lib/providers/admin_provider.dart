@@ -1,12 +1,67 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 class AdminProvider extends ChangeNotifier {
   final _supabase = Supabase.instance.client;
+  final FlutterLocalNotificationsPlugin _notificationsPlugin = FlutterLocalNotificationsPlugin();
+  RealtimeChannel? _reportsSubscription;
   
   bool _isLoading = false;
   bool get isLoading => _isLoading;
 
+  AdminProvider() {
+    _initNotifications();
+  }
+
+  Future<void> _initNotifications() async {
+    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const initSettings = InitializationSettings(android: androidSettings);
+    await _notificationsPlugin.initialize(initSettings);
+  }
+
+  void startListeningForEmergencies(VoidCallback onNewEmergency) {
+    if (_reportsSubscription != null) return;
+
+    _reportsSubscription = _supabase.channel('public:reports').onPostgresChanges(
+      event: PostgresChangeEvent.insert,
+      schema: 'public',
+      table: 'reports',
+      callback: (payload) {
+        final newReport = payload.newRecord;
+        if (newReport['is_critical_override'] == true) {
+          _triggerSirenAlert(newReport['title'] ?? 'Emergency SOS');
+          onNewEmergency();
+        }
+      },
+    ).subscribe();
+  }
+
+  void stopListeningForEmergencies() {
+    _reportsSubscription?.unsubscribe();
+    _reportsSubscription = null;
+  }
+
+  Future<void> _triggerSirenAlert(String title) async {
+    const androidDetails = AndroidNotificationDetails(
+      'emergency_sos_channel',
+      'Emergency SOS Alerts',
+      channelDescription: 'Loud alerts for incoming SOS emergencies',
+      importance: Importance.max,
+      priority: Priority.max,
+      playSound: true,
+      enableVibration: true,
+      fullScreenIntent: true, // Pops over the screen
+    );
+    const details = NotificationDetails(android: androidDetails);
+    
+    await _notificationsPlugin.show(
+      0,
+      'CRITICAL SOS ALERT',
+      'An emergency was just reported: $title',
+      details,
+    );
+  }
   List<Map<String, dynamic>> _pendingResidents = [];
   List<Map<String, dynamic>> get pendingResidents => _pendingResidents;
 
