@@ -17,7 +17,7 @@ class AdminProvider extends ChangeNotifier {
   Future<void> _initNotifications() async {
     const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
     const initSettings = InitializationSettings(android: androidSettings);
-    await _notificationsPlugin.initialize(initSettings);
+    await _notificationsPlugin.initialize(settings: initSettings);
   }
 
   void startListeningForEmergencies(VoidCallback onNewEmergency) {
@@ -56,10 +56,10 @@ class AdminProvider extends ChangeNotifier {
     const details = NotificationDetails(android: androidDetails);
     
     await _notificationsPlugin.show(
-      0,
-      'CRITICAL SOS ALERT',
-      'An emergency was just reported: $title',
-      details,
+      id: 0,
+      title: 'CRITICAL SOS ALERT',
+      body: 'An emergency was just reported: $title',
+      notificationDetails: details,
     );
   }
   List<Map<String, dynamic>> _pendingResidents = [];
