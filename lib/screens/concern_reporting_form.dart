@@ -1,8 +1,10 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:image_picker/image_picker.dart';
 import '../providers/report_provider.dart';
 import '../theme/app_theme.dart';
 
@@ -31,6 +33,9 @@ class _ConcernReportingFormState extends State<ConcernReportingForm> {
   LatLng? _selectedLocation;
   final MapController _mapController = MapController();
   bool _isLocating = false;
+
+  final List<File> _evidenceImages = [];
+  final ImagePicker _picker = ImagePicker();
 
   @override
   void initState() {
@@ -78,6 +83,21 @@ class _ConcernReportingFormState extends State<ConcernReportingForm> {
       }
     } finally {
       if (mounted) setState(() => _isLocating = false);
+    }
+  }
+
+  Future<void> _pickImage(ImageSource source) async {
+    try {
+      final XFile? image = await _picker.pickImage(source: source, imageQuality: 70);
+      if (image != null) {
+        setState(() {
+          _evidenceImages.add(File(image.path));
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error picking image: $e')));
+      }
     }
   }
 
@@ -131,6 +151,7 @@ class _ConcernReportingFormState extends State<ConcernReportingForm> {
                   latitude: _selectedLocation?.latitude,
                   longitude: _selectedLocation?.longitude,
                   addressNotes: _addressController.text.isEmpty ? null : _addressController.text,
+                  evidenceImages: _evidenceImages,
                 );
                 
                 if (mounted) {
@@ -175,16 +196,82 @@ class _ConcernReportingFormState extends State<ConcernReportingForm> {
               ),
               Step(
                 title: const Text('Evidence'),
-                content: const Center(child: Padding(
-                  padding: EdgeInsets.all(16.0),
-                  child: Text('Camera & Photo Upload will be enabled in a future update.'),
-                )),
+                content: _buildEvidenceSection(),
                 isActive: _currentStep >= 3,
               ),
             ],
           );
         }
       ),
+    );
+  }
+
+  Widget _buildEvidenceSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Attach photos of the situation (Optional)', style: TextStyle(fontWeight: FontWeight.bold)),
+        const SizedBox(height: 16),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            ElevatedButton.icon(
+              onPressed: () => _pickImage(ImageSource.camera),
+              icon: const Icon(Icons.camera_alt),
+              label: const Text('Camera'),
+            ),
+            ElevatedButton.icon(
+              onPressed: () => _pickImage(ImageSource.gallery),
+              icon: const Icon(Icons.photo_library),
+              label: const Text('Gallery'),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        if (_evidenceImages.isNotEmpty)
+          SizedBox(
+            height: 120,
+            child: ListView.builder(
+              scrollDirection: Axis.horizontal,
+              itemCount: _evidenceImages.length,
+              itemBuilder: (context, index) {
+                return Stack(
+                  children: [
+                    Container(
+                      margin: const EdgeInsets.only(right: 8, top: 8),
+                      width: 100,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(8),
+                        image: DecorationImage(
+                          image: FileImage(_evidenceImages[index]),
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      top: 0,
+                      right: 0,
+                      child: GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _evidenceImages.removeAt(index);
+                          });
+                        },
+                        child: Container(
+                          decoration: const BoxDecoration(
+                            color: Colors.red,
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.close, color: Colors.white, size: 20),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+      ],
     );
   }
 

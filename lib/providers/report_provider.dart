@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -83,6 +84,7 @@ class ReportProvider extends ChangeNotifier {
     double? latitude,
     double? longitude,
     String? addressNotes,
+    List<File>? evidenceImages,
   }) async {
     _setLoading(true);
     try {
@@ -117,6 +119,25 @@ class ReportProvider extends ChangeNotifier {
           'longitude': longitude,
           'accuracy': 10.0, // Mock accuracy
         });
+      }
+
+      // Upload Evidence Images
+      if (evidenceImages != null && evidenceImages.isNotEmpty) {
+        for (var i = 0; i < evidenceImages.length; i++) {
+          final file = evidenceImages[i];
+          final fileExt = file.path.split('.').last;
+          final fileName = '${DateTime.now().millisecondsSinceEpoch}_$i.$fileExt';
+          final storagePath = '$userId/$reportId/$fileName';
+          
+          // Upload to Supabase Storage
+          await _supabase.storage.from('evidence').upload(storagePath, file);
+          
+          // Link in database
+          await _supabase.from('report_evidence').insert({
+            'report_id': reportId,
+            'storage_path': storagePath,
+          });
+        }
       }
       
       // Refresh list
