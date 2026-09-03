@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:geolocator/geolocator.dart';
 import '../theme/app_theme.dart';
+import '../providers/auth_provider.dart';
+import '../providers/report_provider.dart';
 
 class EmergencySOSScreen extends StatefulWidget {
   const EmergencySOSScreen({super.key});
@@ -12,6 +16,9 @@ class _EmergencySOSScreenState extends State<EmergencySOSScreen> {
   bool _isHolding = false;
   double _holdProgress = 0.0;
   String? _selectedEmergencyType;
+  
+  Position? _currentPosition;
+  bool _isSilentMode = false;
 
   final List<String> _emergencyTypes = [
     'Being Followed',
@@ -21,30 +28,87 @@ class _EmergencySOSScreenState extends State<EmergencySOSScreen> {
     'Accident'
   ];
 
+  @override
+  void initState() {
+    super.initState();
+    _fetchLiveLocation();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Provider.of<ReportProvider>(context, listen: false).fetchConcernTypes();
+    });
+  }
+
+  Future<void> _fetchLiveLocation() async {
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return;
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) return;
+      }
+
+      final position = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+      if (mounted) {
+        setState(() {
+          _currentPosition = position;
+        });
+      }
+    } catch (e) {
+      debugPrint("Error fetching location: $e");
+    }
+  }
+
   void _onHoldStart(LongPressStartDetails details) async {
     setState(() => _isHolding = true);
     
-    // Simulate Location Permission Request and One-Time GPS Capture
-    // As defined in Flow 3 - Emergency SOS
     try {
-      await Future.delayed(const Duration(seconds: 1)); // Request Permission delay
-      await Future.delayed(const Duration(seconds: 1)); // Capture GPS delay
+      await Future.delayed(const Duration(seconds: 2));
       
       if (_isHolding && mounted) {
-        // Prepare SOS Details and Submit
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('SOS Alert Sent to Barangay!')),
+        // Trigger SOS Submission
+        final reportProvider = Provider.of<ReportProvider>(context, listen: false);
+        
+        // Find a suitable concern type for emergencies
+        String typeId = '00000000-0000-0000-0000-000000000000';
+        if (reportProvider.concernTypes.isNotEmpty) {
+          final peaceOrder = reportProvider.concernTypes.where((t) => t['category_name'] == 'Peace & Order').firstOrNull;
+          typeId = peaceOrder?['id'] ?? reportProvider.concernTypes.first['id'];
+        }
+        
+        final success = await reportProvider.submitReport(
+          typeId: typeId, 
+          title: _selectedEmergencyType ?? 'CRITICAL SOS ALERT',
+          description: _isSilentMode ? 'SILENT SOS TRIGGERED' : 'SOS TRIGGERED',
+          populationScale: 1,
+          vulnerableGroups: [],
+          isEmergency: true,
+          latitude: _currentPosition?.latitude,
+          longitude: _currentPosition?.longitude,
         );
-        setState(() {
-          _isHolding = false;
-          _holdProgress = 1.0;
-        });
-        Navigator.pop(context);
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(success ? 'SOS Alert Sent to Barangay!' : 'Failed to send SOS.'),
+              backgroundColor: success ? AppTheme.sosRed : Colors.black,
+            ),
+          );
+          
+          setState(() {
+            _isHolding = false;
+            _holdProgress = 1.0;
+          });
+          
+          if (success) {
+            Navigator.pop(context);
+          }
+        }
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('SOS Location Unavailable State. GPS Failed.')),
+          const SnackBar(content: Text('SOS Failed to send.')),
         );
       }
     }
@@ -59,6 +123,8 @@ class _EmergencySOSScreenState extends State<EmergencySOSScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final auth = Provider.of<AuthProvider>(context);
+    
     return Scaffold(
       appBar: AppBar(
         title: const Text('Emergency SOS'),
@@ -129,8 +195,19 @@ class _EmergencySOSScreenState extends State<EmergencySOSScreen> {
               textAlign: TextAlign.center,
               style: TextStyle(color: Colors.black54),
             ),
-            const SizedBox(height: 40),
+            const SizedBox(height: 20),
             
+            // Silent Mode Toggle
+            SwitchListTile(
+              title: const Text('Silent Mode', style: TextStyle(fontWeight: FontWeight.bold)),
+              subtitle: const Text('Send SOS without flashing lights or sounds'),
+              value: _isSilentMode,
+              activeColor: AppTheme.sosRed,
+              onChanged: (val) => setState(() => _isSilentMode = val),
+              secondary: const Icon(Icons.volume_off),
+            ),
+            
+            const SizedBox(height: 20),
             // Emergency Type Selection
             const Align(
               alignment: Alignment.centerLeft,
@@ -172,8 +249,14 @@ class _EmergencySOSScreenState extends State<EmergencySOSScreen> {
                       ],
                     ),
                     const Divider(),
-                    _buildInfoRow(Icons.person, 'Registered Resident', 'Juan dela Cruz'),
-                    _buildInfoRow(Icons.location_on, 'GPS Location', '14.5995° N, 120.9842° E\nAccuracy: ±5 meters'),
+                    _buildInfoRow(Icons.person, 'Registered Resident', auth.userName ?? 'Unknown'),
+                    _buildInfoRow(
+                      Icons.location_on, 
+                      'GPS Location', 
+                      _currentPosition != null 
+                        ? '\${_currentPosition!.latitude.toStringAsFixed(4)}° N, \${_currentPosition!.longitude.toStringAsFixed(4)}° E'
+                        : 'Locating...'
+                    ),
                   ],
                 ),
               ),
