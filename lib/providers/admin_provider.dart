@@ -49,14 +49,14 @@ class AdminProvider extends ChangeNotifier {
 
   Future<void> _triggerSirenAlert(String title) async {
     const androidDetails = AndroidNotificationDetails(
-      'emergency_sos_channel',
-      'Emergency SOS Alerts',
+      'emergency_sos_channel_v2', // Changed ID to bypass Android channel caching
+      'Critical Emergency Alerts',
       channelDescription: 'Loud alerts for incoming SOS emergencies',
       importance: Importance.max,
       priority: Priority.max,
       playSound: true,
       enableVibration: true,
-      fullScreenIntent: true, // Pops over the screen
+      fullScreenIntent: true,
     );
     const details = NotificationDetails(android: androidDetails);
     
