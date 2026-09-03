@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
+import 'package:geolocator/geolocator.dart';
 import '../providers/report_provider.dart';
 import '../theme/app_theme.dart';
 
@@ -12,18 +15,22 @@ class ConcernReportingForm extends StatefulWidget {
 
 class _ConcernReportingFormState extends State<ConcernReportingForm> {
   int _currentStep = 0;
+  
   String? _selectedCategoryId;
+  bool _isEmergency = false;
   
   final _titleController = TextEditingController();
   final _descController = TextEditingController();
+  final _addressController = TextEditingController();
   
-  int _populationScale = 3; // 1 to 5
+  int _populationScale = 1; // 1 to 5
+  
+  final List<String> _vulnerableGroups = ['Children', 'Elderly', 'PWDs', 'Pregnant', 'None'];
   final List<String> _selectedVulnerableGroups = [];
-  bool _isEmergency = false;
 
-  final List<String> _vulnerableGroups = [
-    'Elderly', 'PWD', 'Children', 'Pregnant'
-  ];
+  LatLng? _selectedLocation;
+  final MapController _mapController = MapController();
+  bool _isLocating = false;
 
   @override
   void initState() {
@@ -34,19 +41,63 @@ class _ConcernReportingFormState extends State<ConcernReportingForm> {
   }
 
   @override
+  void dispose() {
+    _titleController.dispose();
+    _descController.dispose();
+    _addressController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _getCurrentLocation() async {
+    setState(() => _isLocating = true);
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) throw Exception('Location disabled');
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) throw Exception('Permission denied');
+      }
+      
+      if (permission == LocationPermission.deniedForever) {
+        throw Exception('Permission permanently denied');
+      }
+
+      Position position = await Geolocator.getCurrentPosition();
+      final latLng = LatLng(position.latitude, position.longitude);
+      
+      setState(() {
+        _selectedLocation = latLng;
+      });
+      
+      _mapController.move(latLng, 16.0);
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Could not get location: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _isLocating = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Report a Concern'),
-      ),
+      appBar: AppBar(title: const Text('Report Concern')),
       body: Consumer<ReportProvider>(
         builder: (context, provider, child) {
           if (provider.concernTypes.isEmpty) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(
+              child: Padding(
+                padding: EdgeInsets.all(16.0),
+                child: Text('No categories found. Please run seed_data.sql in Supabase.'),
+              ),
+            );
           }
           
           return Stepper(
-            type: StepperType.vertical, // Changed to fix overflow
+            type: StepperType.vertical,
             currentStep: _currentStep,
             onStepContinue: () async {
               if (_currentStep == 0) {
@@ -72,11 +123,14 @@ class _ConcernReportingFormState extends State<ConcernReportingForm> {
                   populationScale: _populationScale,
                   vulnerableGroups: _selectedVulnerableGroups,
                   isEmergency: _isEmergency,
+                  latitude: _selectedLocation?.latitude,
+                  longitude: _selectedLocation?.longitude,
+                  addressNotes: _addressController.text.isEmpty ? null : _addressController.text,
                 );
                 
                 if (mounted) {
                   if (success) {
-                    Navigator.pop(context); // return to dashboard
+                    Navigator.pop(context);
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('Submission Confirmation: Report sent!')),
                     );
@@ -110,10 +164,7 @@ class _ConcernReportingFormState extends State<ConcernReportingForm> {
               ),
               Step(
                 title: const Text('Location'),
-                content: const Center(child: Padding(
-                  padding: EdgeInsets.all(16.0),
-                  child: Text('Map View & Pin Drop will be enabled in a future update.'),
-                )),
+                content: _buildLocationSection(),
                 isActive: _currentStep >= 2,
                 state: _currentStep > 2 ? StepState.complete : StepState.indexed,
               ),
@@ -242,6 +293,81 @@ class _ConcernReportingFormState extends State<ConcernReportingForm> {
               },
             );
           }).toList(),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLocationSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Tap the map to set a pin, or use GPS.', style: TextStyle(color: Colors.grey, fontSize: 12)),
+        const SizedBox(height: 8),
+        Container(
+          height: 200,
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.grey.shade300),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Stack(
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: FlutterMap(
+                  mapController: _mapController,
+                  options: MapOptions(
+                    initialCenter: const LatLng(14.5995, 120.9842), // Manila Default
+                    initialZoom: 13.0,
+                    onTap: (tapPosition, point) {
+                      setState(() {
+                        _selectedLocation = point;
+                      });
+                    },
+                  ),
+                  children: [
+                    TileLayer(
+                      urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      userAgentPackageName: 'com.example.helphub',
+                    ),
+                    if (_selectedLocation != null)
+                      MarkerLayer(
+                        markers: [
+                          Marker(
+                            point: _selectedLocation!,
+                            width: 40,
+                            height: 40,
+                            child: const Icon(Icons.location_pin, color: AppTheme.sosRed, size: 40),
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
+              ),
+              Positioned(
+                bottom: 8,
+                right: 8,
+                child: FloatingActionButton.small(
+                  backgroundColor: Colors.white,
+                  onPressed: _getCurrentLocation,
+                  child: _isLocating 
+                      ? const Padding(padding: EdgeInsets.all(8.0), child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Icon(Icons.my_location, color: AppTheme.primaryBlue),
+                ),
+              )
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        TextField(
+          controller: _addressController,
+          decoration: InputDecoration(
+            labelText: 'Exact Address or Landmark (Optional)',
+            hintText: 'e.g. In front of the bakery near Plaza',
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+            prefixIcon: const Icon(Icons.edit_location_alt),
+          ),
+          maxLines: 2,
         ),
       ],
     );

@@ -80,17 +80,20 @@ class ReportProvider extends ChangeNotifier {
     required int populationScale,
     required List<String> vulnerableGroups,
     bool isEmergency = false,
+    double? latitude,
+    double? longitude,
+    String? addressNotes,
   }) async {
     _setLoading(true);
     try {
       final userId = _supabase.auth.currentUser?.id;
       if (userId == null) throw Exception('Not logged in');
 
-      // Basic local priority calculation (Backend priority_engine will override this in reality, 
-      // but for frontend UX we assign a base score to show up on admin queue immediately).
+      // Basic local priority calculation
       int score = isEmergency ? 100 : (populationScale * 10);
 
-      await _supabase.from('reports').insert({
+      // Insert report and get the generated ID
+      final reportRes = await _supabase.from('reports').insert({
         'resident_id': userId,
         'concern_type_id': typeId,
         'title': title,
@@ -101,7 +104,20 @@ class ReportProvider extends ChangeNotifier {
         'is_critical_override': isEmergency,
         'priority_score': score,
         'status': 'submitted',
-      });
+        'address_notes': addressNotes, // Optional textual address
+      }).select('id').single();
+
+      final reportId = reportRes['id'];
+
+      // If we have GPS coordinates, insert them into report_locations
+      if (latitude != null && longitude != null) {
+        await _supabase.from('report_locations').insert({
+          'report_id': reportId,
+          'latitude': latitude,
+          'longitude': longitude,
+          'accuracy': 10.0, // Mock accuracy
+        });
+      }
       
       // Refresh list
       await fetchMyReports();
