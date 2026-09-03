@@ -260,9 +260,9 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
                 height: 80,
                 child: ListView.builder(
                   scrollDirection: Axis.horizontal,
-                  itemCount: evidence.length,
+                  itemCount: report['report_evidence'].length,
                   itemBuilder: (context, index) {
-                    final storagePath = evidence[index]['storage_path'];
+                    final storagePath = report['report_evidence'][index]['storage_path'];
                     final url = Provider.of<ReportProvider>(context, listen: false).getEvidenceUrl(storagePath);
                     return Container(
                       margin: const EdgeInsets.only(right: 8),
