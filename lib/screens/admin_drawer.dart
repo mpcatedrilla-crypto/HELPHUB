@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/auth_provider.dart';
 import '../theme/app_theme.dart';
+import 'admin_history_screen.dart';
 
 class AdminDrawer extends StatelessWidget {
   const AdminDrawer({super.key});
@@ -26,7 +27,15 @@ class AdminDrawer extends StatelessWidget {
             onTap: () => Navigator.pushReplacementNamed(context, '/admin_queue'),
           ),
           ListTile(
-            leading: const Icon(Icons.how_to_reg, color: AppTheme.primaryBlue),
+            leading: const Icon(Icons.history),
+            title: const Text('History Reports'),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminHistoryScreen()));
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.group),
             title: const Text('Resident Verification'),
             onTap: () => Navigator.pushReplacementNamed(context, '/admin_verification'),
           ),

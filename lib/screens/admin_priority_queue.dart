@@ -8,7 +8,9 @@ import '../providers/report_provider.dart';
 import '../providers/admin_provider.dart';
 import '../theme/app_theme.dart';
 import 'package:timeago/timeago.dart' as timeago;
+import 'package:camera/camera.dart';
 import 'admin_drawer.dart';
+import 'camera_screen.dart';
 
 class AdminPriorityQueue extends StatefulWidget {
   const AdminPriorityQueue({super.key});
@@ -58,11 +60,11 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue> {
           }
 
           final emergencyReports = provider.allReports
-              .where((r) => r['is_critical_override'] == true && r['status'] != 'resolved' && r['status'] != 'rejected')
+              .where((r) => r['is_critical_override'] == true && r['status'] != 'resolved' && r['status'] != 'rejected' && r['status'] != 'pending_confirmation')
               .toList();
               
           final regularReports = provider.allReports
-              .where((r) => !emergencyReports.contains(r))
+              .where((r) => !emergencyReports.contains(r) && r['status'] != 'resolved' && r['status'] != 'rejected' && r['status'] != 'pending_confirmation')
               .toList();
 
           return RefreshIndicator(
@@ -274,11 +276,14 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue> {
                     const SizedBox(height: 16),
                     OutlinedButton.icon(
                       onPressed: () async {
-                        final picker = ImagePicker();
-                        final picked = await picker.pickImage(source: ImageSource.camera);
-                        if (picked != null) {
+                        final cameras = await availableCameras();
+                        final imagePath = await Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (context) => CameraScreen(cameras: cameras)),
+                        );
+                        if (imagePath != null) {
                           setState(() {
-                            proofImage = File(picked.path);
+                            proofImage = File(imagePath as String);
                           });
                         }
                       },
