@@ -6,6 +6,8 @@ import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:permission_handler/permission_handler.dart';
+import 'package:camera/camera.dart';
+import 'camera_screen.dart';
 import '../providers/report_provider.dart';
 import '../theme/app_theme.dart';
 
@@ -90,6 +92,7 @@ class _ConcernReportingFormState extends State<ConcernReportingForm> {
   Future<void> _pickImage(ImageSource source) async {
     try {
       if (source == ImageSource.camera) {
+        // Request permission explicitly just in case
         var status = await Permission.camera.status;
         if (!status.isGranted) {
           status = await Permission.camera.request();
@@ -98,13 +101,29 @@ class _ConcernReportingFormState extends State<ConcernReportingForm> {
             return;
           }
         }
-      }
-
-      final XFile? image = await _picker.pickImage(source: source, imageQuality: 70);
-      if (image != null) {
-        setState(() {
-          _evidenceImages.add(File(image.path));
-        });
+        
+        // Use custom camera package
+        final cameras = await availableCameras();
+        if (cameras.isEmpty) throw Exception('No cameras found on device');
+        
+        final imagePath = await Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => CameraScreen(cameras: cameras)),
+        );
+        
+        if (imagePath != null) {
+          setState(() {
+            _evidenceImages.add(File(imagePath));
+          });
+        }
+      } else {
+        // Use standard image picker for gallery
+        final XFile? image = await _picker.pickImage(source: source, imageQuality: 70);
+        if (image != null) {
+          setState(() {
+            _evidenceImages.add(File(image.path));
+          });
+        }
       }
     } catch (e) {
       if (mounted) {
