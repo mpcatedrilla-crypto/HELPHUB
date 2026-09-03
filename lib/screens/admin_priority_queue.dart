@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import '../providers/auth_provider.dart';
@@ -233,7 +235,7 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: () => provider.updateReportStatus(reportId, 'resolved'), 
+                    onPressed: () => _showResolveDialog(context, provider, reportId), 
                     icon: const Icon(Icons.check), 
                     label: const Text('Resolve'), 
                     style: _outlinedStyle()
@@ -247,6 +249,74 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue> {
     );
   }
 
+  void _showResolveDialog(BuildContext context, ReportProvider provider, String reportId) {
+    final TextEditingController notesController = TextEditingController();
+    File? proofImage;
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('Resolve Report'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('Please provide details on how this issue was resolved.'),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: notesController,
+                      decoration: const InputDecoration(labelText: 'Resolution Notes', border: OutlineInputBorder()),
+                      maxLines: 3,
+                    ),
+                    const SizedBox(height: 16),
+                    OutlinedButton.icon(
+                      onPressed: () async {
+                        final picker = ImagePicker();
+                        final picked = await picker.pickImage(source: ImageSource.camera);
+                        if (picked != null) {
+                          setState(() {
+                            proofImage = File(picked.path);
+                          });
+                        }
+                      },
+                      icon: const Icon(Icons.camera_alt),
+                      label: const Text('Attach Proof (Optional)'),
+                    ),
+                    if (proofImage != null) ...[
+                      const SizedBox(height: 8),
+                      Image.file(proofImage!, height: 100),
+                    ]
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                ElevatedButton(
+                  onPressed: () async {
+                    if (notesController.text.trim().isEmpty) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Notes are required')));
+                      return;
+                    }
+                    Navigator.pop(ctx);
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Submitting Resolution...')));
+                    final success = await provider.resolveReport(reportId, notesController.text, proofImage);
+                    if (success) {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Resolution Sent to Resident for Confirmation')));
+                    }
+                  },
+                  child: const Text('Submit Resolution'),
+                ),
+              ],
+            );
+          }
+        );
+      }
+    );
+  }
+  
   ButtonStyle _outlinedStyle({Color? color}) {
     return OutlinedButton.styleFrom(
       foregroundColor: color ?? Colors.black87,
@@ -336,14 +406,14 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue> {
                             Navigator.pop(ctx);
                           },
                         ),
-                        ListTile(
-                          leading: const Icon(Icons.check, color: AppTheme.statusResolved),
-                          title: const Text('Mark Resolved'),
-                          onTap: () {
-                            provider.updateReportStatus(reportId, 'resolved');
-                            Navigator.pop(ctx);
-                          },
-                        ),
+                          ListTile(
+                            leading: const Icon(Icons.check, color: AppTheme.statusResolved),
+                            title: const Text('Mark Resolved'),
+                            onTap: () {
+                              Navigator.pop(ctx);
+                              _showResolveDialog(context, provider, reportId);
+                            },
+                          ),
                         const Divider(),
                         const Padding(
                           padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),

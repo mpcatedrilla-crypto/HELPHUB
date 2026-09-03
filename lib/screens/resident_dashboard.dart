@@ -150,14 +150,7 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
                       if (report['status'] == 'submitted') statusColor = Colors.orange;
                       if (report['status'] == 'resolved') statusColor = AppTheme.statusResolved;
                       
-                      return _buildReportListTile(
-                        context,
-                        report['title'] ?? 'No Title',
-                        report['concern_types'] != null ? report['concern_types']['category_name'] : 'Other',
-                        report['status'] ?? 'Unknown',
-                        statusColor,
-                        report['report_evidence'],
-                      ).animate().fade(duration: 400.ms).slideX(delay: (entry.key * 100).ms);
+                      return _buildReportListTile(context, report, statusColor).animate().fade(duration: 400.ms).slideX(delay: (entry.key * 100).ms);
                     }),
                   
                   // Temporary admin link
@@ -231,7 +224,7 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
     );
   }
 
-  Widget _buildReportListTile(BuildContext context, String title, String subtitle, String status, Color statusColor, List<dynamic>? evidence) {
+  Widget _buildReportListTile(BuildContext context, Map<String, dynamic> report, Color statusColor) {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: Column(
@@ -246,8 +239,8 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
               ),
               child: const Icon(Icons.report, color: AppTheme.primaryBlue),
             ),
-            title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: Text(subtitle),
+            title: Text(report['title'] ?? 'No Title', style: const TextStyle(fontWeight: FontWeight.bold)),
+            subtitle: Text(report['concern_types'] != null ? report['concern_types']['category_name'] : 'Other'),
             trailing: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
@@ -255,12 +248,12 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Text(
-                status.toUpperCase(),
+                (report['status'] ?? 'Unknown').toUpperCase(),
                 style: TextStyle(color: statusColor, fontWeight: FontWeight.bold, fontSize: 10),
               ),
             ),
           ),
-          if (evidence != null && evidence.isNotEmpty)
+          if (report['report_evidence'] != null && report['report_evidence'].isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(left: 16, right: 16, bottom: 16),
               child: SizedBox(
@@ -286,6 +279,34 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
                 ),
               ),
             ),
+
+          if (report['status'] == 'pending_confirmation')
+            Container(
+              padding: const EdgeInsets.all(12),
+              color: Colors.orange.withOpacity(0.1),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('Admin Resolution Notes:', style: TextStyle(fontWeight: FontWeight.bold)),
+                  Text(report['admin_resolution_notes'] ?? 'No notes provided.'),
+                  const SizedBox(height: 8),
+                  if (report['admin_proof_url'] != null)
+                    Image.network(report['admin_proof_url'], height: 100),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(backgroundColor: AppTheme.statusResolved, foregroundColor: Colors.white),
+                      onPressed: () {
+                        Provider.of<ReportProvider>(context, listen: false).updateReportStatus(report['id'], 'resolved');
+                      },
+                      child: const Text('Confirm Resolution'),
+                    ),
+                  )
+                ],
+              ),
+            ),
+
         ],
       ),
     );

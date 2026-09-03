@@ -172,6 +172,33 @@ class ReportProvider extends ChangeNotifier {
     }
   }
 
+  Future<bool> resolveReport(String reportId, String notes, File? proofImage) async {
+    try {
+      _setLoading(true);
+      String? proofUrl;
+      
+      if (proofImage != null) {
+        final fileName = '${DateTime.now().millisecondsSinceEpoch}_proof.jpg';
+        await _supabase.storage.from('evidence').upload(fileName, proofImage);
+        proofUrl = _supabase.storage.from('evidence').getPublicUrl(fileName);
+      }
+
+      await _supabase.from('reports').update({
+        'status': 'pending_confirmation',
+        'admin_resolution_notes': notes,
+        if (proofUrl != null) 'admin_proof_url': proofUrl,
+      }).eq('id', reportId);
+
+      await fetchAllReports();
+      _setLoading(false);
+      return true;
+    } catch (e) {
+      _errorMessage = 'Failed to resolve: $e';
+      _setLoading(false);
+      return false;
+    }
+  }
+
   void _setLoading(bool value) {
     _isLoading = value;
     notifyListeners();
