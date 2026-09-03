@@ -114,6 +114,11 @@ class _ConcernReportingFormState extends State<ConcernReportingForm> {
               
               if (_currentStep < 3) {
                 setState(() => _currentStep += 1);
+                
+                // Automatically fetch GPS when reaching the Location step
+                if (_currentStep == 2 && _selectedLocation == null) {
+                  _getCurrentLocation();
+                }
               } else {
                 // Submit Form
                 final success = await provider.submitReport(
