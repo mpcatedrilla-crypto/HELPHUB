@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import '../providers/auth_provider.dart';
 import '../providers/report_provider.dart';
+import '../providers/admin_provider.dart';
 import '../theme/app_theme.dart';
 import 'package:timeago/timeago.dart' as timeago;
+import 'admin_drawer.dart';
 
 class AdminPriorityQueue extends StatefulWidget {
   const AdminPriorityQueue({super.key});
@@ -18,6 +21,7 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Provider.of<ReportProvider>(context, listen: false).fetchAllReports();
+      Provider.of<AdminProvider>(context, listen: false).fetchRoutingDestinations();
     });
   }
 
@@ -25,21 +29,15 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Priority Algorithm Queue'),
-        actions: [
-          const Center(child: _LiveBadge()),
-          const SizedBox(width: 16),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            onPressed: () {
-              Provider.of<AuthProvider>(context, listen: false).logout();
-              Navigator.pushReplacementNamed(context, '/');
-            },
-          ),
+        title: const Text('Priority Queue'),
+        actions: const [
+          Center(child: _LiveBadge()),
+          SizedBox(width: 16),
         ],
       ),
-      body: Consumer<ReportProvider>(
-        builder: (context, provider, child) {
+      drawer: const AdminDrawer(),
+      body: Consumer2<ReportProvider, AdminProvider>(
+        builder: (context, provider, adminProvider, child) {
           if (provider.isLoading && provider.allReports.isEmpty) {
             return const Center(child: CircularProgressIndicator());
           }
@@ -53,7 +51,10 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue> {
               .toList();
 
           return RefreshIndicator(
-            onRefresh: provider.fetchAllReports,
+            onRefresh: () async {
+              provider.fetchAllReports();
+              adminProvider.fetchRoutingDestinations();
+            },
             child: SingleChildScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.all(16.0),
@@ -66,15 +67,15 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue> {
                   if (emergencyReports.isEmpty)
                     const Text('No active emergencies.', style: TextStyle(color: Colors.grey)),
                   
-                  ...emergencyReports.map((r) => _buildEmergencyCard(
-                    r['profiles'] != null ? r['profiles']['full_name'] : 'Unknown',
-                    '${r['concern_types']?['category_name'] ?? 'Emergency'} - ${r['title']}',
+                  ...emergencyReports.asMap().entries.map((entry) => _buildEmergencyCard(
+                    entry.value['profiles'] != null ? entry.value['profiles']['full_name'] : 'Unknown',
+                    '${entry.value['concern_types']?['category_name'] ?? 'Emergency'} - ${entry.value['title']}',
                     'Tap to view details', 
-                    timeago.format(DateTime.parse(r['created_at'])),
+                    timeago.format(DateTime.parse(entry.value['created_at'])),
                     isCritical: true,
-                    reportId: r['id'],
+                    reportId: entry.value['id'],
                     provider: provider,
-                  )),
+                  ).animate().fade(duration: 400.ms).slideX(delay: (entry.key * 100).ms)),
                   
                   const SizedBox(height: 32),
                   
@@ -94,7 +95,8 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue> {
                   if (regularReports.isEmpty)
                     const Text('No reports in queue.', style: TextStyle(color: Colors.grey)),
                   
-                  ...regularReports.map((r) {
+                  ...regularReports.asMap().entries.map((entry) {
+                    final r = entry.value;
                     final score = r['priority_score'] ?? 0;
                     Color badgeColor = AppTheme.statusMedium;
                     String badgeText = 'MEDIUM';
@@ -118,7 +120,9 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue> {
                       timeago.format(DateTime.parse(r['created_at'])),
                       reportId: r['id'],
                       provider: provider,
-                    );
+                      adminProvider: adminProvider,
+                      currentDestinationId: r['routing_destination_id'],
+                    ).animate().fade(duration: 400.ms).slideY(begin: 0.2, delay: (entry.key * 50).ms);
                   }),
                 ],
               ),
@@ -141,10 +145,12 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue> {
         child: Column(
           children: [
             if (isCritical) ...[
-              const Row(
+              Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.emergency, color: AppTheme.sosRed, size: 16),
+                  Icon(Icons.emergency, color: AppTheme.sosRed, size: 16)
+                      .animate(onPlay: (controller) => controller.repeat(reverse: true))
+                      .scaleXY(end: 1.2, duration: 500.ms),
                   SizedBox(width: 8),
                   Text('CRITICAL - IMMEDIATE RESPONSE NEEDED', style: TextStyle(color: AppTheme.sosRed, fontWeight: FontWeight.bold, fontSize: 12)),
                 ],
@@ -172,7 +178,6 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue> {
                       ),
                       const SizedBox(height: 4),
                       Text(details, style: const TextStyle(color: Colors.grey, fontSize: 14)),
-                      Text(phone, style: const TextStyle(color: AppTheme.primaryBlue, fontSize: 14)),
                     ],
                   ),
                 ),
@@ -191,37 +196,10 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: OutlinedButton.icon(
-                    onPressed: () {},
-                    icon: const Icon(Icons.call),
-                    label: const Text('Call'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppTheme.primaryBlue,
-                      side: const BorderSide(color: AppTheme.primaryBlue),
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
                     onPressed: () => provider.updateReportStatus(reportId, 'resolved'), 
                     icon: const Icon(Icons.check), 
                     label: const Text('Resolve'), 
                     style: _outlinedStyle()
-                  )
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: () => provider.updateReportStatus(reportId, 'rejected'), 
-                    icon: const Icon(Icons.cancel_outlined, color: Colors.grey), 
-                    label: const Text('False Alarm', style: TextStyle(color: Colors.grey)), 
-                    style: _outlinedStyle(color: Colors.grey)
                   )
                 ),
               ],
@@ -241,7 +219,14 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue> {
     );
   }
 
-  Widget _buildPriorityItem(String score, String title, String subtitle, String badgeText, Color badgeColor, String date, {required String reportId, required ReportProvider provider}) {
+  Widget _buildPriorityItem(String score, String title, String subtitle, String badgeText, Color badgeColor, String date, {required String reportId, required ReportProvider provider, required AdminProvider adminProvider, String? currentDestinationId}) {
+    
+    String assignedTo = "Unassigned";
+    if (currentDestinationId != null) {
+      final dest = adminProvider.routingDestinations.where((d) => d['id'] == currentDestinationId).firstOrNull;
+      if (dest != null) assignedTo = dest['destination_name'];
+    }
+
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: ListTile(
@@ -262,7 +247,20 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue> {
           ),
         ),
         title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
-        subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(subtitle, style: const TextStyle(fontSize: 12)),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                const Icon(Icons.group, size: 12, color: Colors.grey),
+                const SizedBox(width: 4),
+                Text('Assigned to: $assignedTo', style: const TextStyle(fontSize: 12, color: AppTheme.primaryBlue, fontWeight: FontWeight.bold)),
+              ],
+            )
+          ],
+        ),
         trailing: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           crossAxisAlignment: CrossAxisAlignment.end,
@@ -280,30 +278,49 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue> {
           ],
         ),
         onTap: () {
-          // Simple action menu to change status
           showModalBottomSheet(
             context: context,
             builder: (ctx) => SafeArea(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ListTile(
-                    leading: const Icon(Icons.check_circle, color: AppTheme.primaryBlue),
-                    title: const Text('Mark Acknowledged'),
-                    onTap: () {
-                      provider.updateReportStatus(reportId, 'acknowledged');
-                      Navigator.pop(ctx);
-                    },
-                  ),
-                  ListTile(
-                    leading: const Icon(Icons.check, color: AppTheme.statusResolved),
-                    title: const Text('Mark Resolved'),
-                    onTap: () {
-                      provider.updateReportStatus(reportId, 'resolved');
-                      Navigator.pop(ctx);
-                    },
-                  ),
-                ],
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.all(16.0),
+                      child: Text('Report Actions', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.check_circle, color: AppTheme.primaryBlue),
+                      title: const Text('Mark Acknowledged'),
+                      onTap: () {
+                        provider.updateReportStatus(reportId, 'acknowledged');
+                        Navigator.pop(ctx);
+                      },
+                    ),
+                    ListTile(
+                      leading: const Icon(Icons.check, color: AppTheme.statusResolved),
+                      title: const Text('Mark Resolved'),
+                      onTap: () {
+                        provider.updateReportStatus(reportId, 'resolved');
+                        Navigator.pop(ctx);
+                      },
+                    ),
+                    const Divider(),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                      child: Align(alignment: Alignment.centerLeft, child: Text('Dispatch Team', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey))),
+                    ),
+                    ...adminProvider.routingDestinations.map((dest) => ListTile(
+                      leading: const Icon(Icons.local_shipping),
+                      title: Text(dest['destination_name']),
+                      trailing: currentDestinationId == dest['id'] ? const Icon(Icons.check, color: AppTheme.primaryBlue) : null,
+                      onTap: () {
+                        adminProvider.assignReportDestination(reportId, dest['id']);
+                        Navigator.pop(ctx);
+                      },
+                    )),
+                  ],
+                ),
               ),
             ),
           );
@@ -324,13 +341,13 @@ class _LiveBadge extends StatelessWidget {
         color: AppTheme.sosRed,
         borderRadius: BorderRadius.circular(12),
       ),
-      child: const Row(
-        children: [
+      child: Row(
+        children: const [
           Icon(Icons.fiber_manual_record, color: Colors.white, size: 8),
           SizedBox(width: 4),
           Text('LIVE', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
         ],
-      ),
+      ).animate(onPlay: (controller) => controller.repeat(reverse: true)).fade(end: 0.5, duration: 800.ms),
     );
   }
 }

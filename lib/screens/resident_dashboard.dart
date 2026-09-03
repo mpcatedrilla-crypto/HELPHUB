@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import '../providers/auth_provider.dart';
 import '../providers/report_provider.dart';
+import '../providers/admin_provider.dart';
 import '../theme/app_theme.dart';
 
 class ResidentDashboard extends StatefulWidget {
@@ -17,6 +19,7 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Provider.of<ReportProvider>(context, listen: false).fetchMyReports();
+      Provider.of<AdminProvider>(context, listen: false).fetchAnnouncements();
     });
   }
 
@@ -26,7 +29,7 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
     
     return Scaffold(
       appBar: AppBar(
-        title: const Text('HelpHub'),
+        title: const Text('HelpHub Dashboard'),
         actions: [
           IconButton(
             icon: const Icon(Icons.notifications),
@@ -41,10 +44,13 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
           ),
         ],
       ),
-      body: Consumer<ReportProvider>(
-        builder: (context, provider, child) {
+      body: Consumer2<ReportProvider, AdminProvider>(
+        builder: (context, provider, adminProvider, child) {
           return RefreshIndicator(
-            onRefresh: provider.fetchMyReports,
+            onRefresh: () async {
+              provider.fetchMyReports();
+              adminProvider.fetchAnnouncements();
+            },
             child: SingleChildScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.all(16.0),
@@ -54,8 +60,28 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
                   Text(
                     'Welcome back,\n${auth.userName ?? "Resident"}',
                     style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: AppTheme.primaryBlue),
-                  ),
+                  ).animate().fade().slideY(begin: -0.2),
                   const SizedBox(height: 24),
+                  
+                  // Announcements Banner
+                  if (adminProvider.announcements.isNotEmpty) ...[
+                    Card(
+                      color: AppTheme.surfaceColor,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        side: const BorderSide(color: AppTheme.primaryBlue, width: 1),
+                      ),
+                      child: ListTile(
+                        leading: const Icon(Icons.campaign, color: AppTheme.primaryBlue),
+                        title: Text(adminProvider.announcements.first['title'] ?? 'Announcement', style: const TextStyle(fontWeight: FontWeight.bold)),
+                        subtitle: Text(adminProvider.announcements.first['message'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () {},
+                      ),
+                    ).animate().fade(duration: 400.ms).scale(),
+                    const SizedBox(height: 24),
+                  ],
+
                   // Quick Access Grid
                   GridView.count(
                     shrinkWrap: true,
@@ -94,10 +120,10 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
                         icon: Icons.campaign,
                         color: Colors.white,
                         textColor: AppTheme.primaryBlue,
-                        badgeCount: 2,
+                        badgeCount: adminProvider.announcements.length,
                         onTap: () {},
                       ),
-                    ],
+                    ].animate(interval: 50.ms).fade().scale(),
                   ),
                   const SizedBox(height: 24),
                   
@@ -110,7 +136,7 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
                         child: const Text('View all')
                       ),
                     ],
-                  ),
+                  ).animate().fade(),
                   const SizedBox(height: 12),
                   
                   if (provider.isLoading && provider.myReports.isEmpty)
@@ -118,7 +144,8 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
                   else if (provider.myReports.isEmpty)
                     const Text('No recent reports.')
                   else
-                    ...provider.myReports.take(3).map((report) {
+                    ...provider.myReports.take(3).toList().asMap().entries.map((entry) {
+                      final report = entry.value;
                       Color statusColor = AppTheme.statusMedium;
                       if (report['status'] == 'submitted') statusColor = Colors.orange;
                       if (report['status'] == 'resolved') statusColor = AppTheme.statusResolved;
@@ -128,7 +155,7 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
                         report['concern_types'] != null ? report['concern_types']['category_name'] : 'Other',
                         report['status'] ?? 'Unknown',
                         statusColor,
-                      );
+                      ).animate().fade(duration: 400.ms).slideX(delay: (entry.key * 100).ms);
                     }),
                   
                   // Temporary admin link
@@ -136,12 +163,17 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
                     Padding(
                       padding: const EdgeInsets.only(top: 32),
                       child: Center(
-                        child: TextButton(
+                        child: TextButton.icon(
+                          icon: const Icon(Icons.admin_panel_settings),
                           onPressed: () => Navigator.pushNamed(context, '/admin_queue'),
-                          child: const Text('Go to Admin Dashboard'),
+                          label: const Text('Enter Admin Dashboard'),
+                          style: TextButton.styleFrom(
+                            backgroundColor: AppTheme.surfaceColor,
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                          )
                         ),
                       ),
-                    ),
+                    ).animate().fade().scale(),
                 ],
               ),
             ),
@@ -189,7 +221,7 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
                     badgeCount.toString(),
                     style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
                   ),
-                ),
+                ).animate(onPlay: (controller) => controller.repeat(reverse: true)).scaleXY(end: 1.1, duration: 600.ms),
               ),
           ],
         ),

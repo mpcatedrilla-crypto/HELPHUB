@@ -5,10 +5,14 @@ import 'screens/emergency_sos_screen.dart';
 import 'screens/concern_reporting_form.dart';
 import 'screens/report_tracking.dart';
 import 'screens/admin_priority_queue.dart';
+import 'screens/admin_verification_screen.dart';
+import 'screens/admin_announcements_screen.dart';
+import 'screens/audit_log_screen.dart';
 
 import 'package:provider/provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/report_provider.dart';
+import 'providers/admin_provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/profile_screen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -27,6 +31,7 @@ void main() async {
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => ReportProvider()),
+        ChangeNotifierProvider(create: (_) => AdminProvider()),
       ],
       child: const HelpHubApp(),
     ),
@@ -51,6 +56,9 @@ class HelpHubApp extends StatelessWidget {
         '/report_tracking': (context) => const ReportTracking(),
         '/admin_queue': (context) => const AdminPriorityQueue(),
         '/profile': (context) => ProfileScreen(),
+        '/admin_verification': (context) => const AdminVerificationScreen(),
+        '/admin_announcements': (context) => const AdminAnnouncementsScreen(),
+        '/admin_audit_logs': (context) => const AuditLogScreen(),
       },
     );
   }
