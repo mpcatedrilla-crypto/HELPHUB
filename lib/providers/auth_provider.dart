@@ -59,27 +59,35 @@ class AuthProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> register(String email, String password, String fullName) async {
+  Future<bool> register(String emailOrPhoneEmail, String password, String fullName, String phone, String address) async {
     _setState(AuthState.loading);
     try {
       final AuthResponse res = await _supabase.auth.signUp(
-        email: email,
+        email: emailOrPhoneEmail,
         password: password,
       );
       
       if (res.user != null) {
-        // Update profile full_name after trigger creation
-        await _supabase.from('profiles').update({'full_name': fullName}).eq('id', res.user!.id);
+        // Update profile
+        await _supabase.from('profiles').update({
+          'full_name': fullName,
+          'phone': phone.isEmpty ? null : phone,
+          'address': address.isEmpty ? null : address,
+        }).eq('id', res.user!.id);
         
         _errorMessage = 'Registration successful! Wait for admin approval to log in.';
         _setState(AuthState.error); // Show message on login screen
+        return true;
       }
+      return false;
     } on AuthException catch (e) {
       _errorMessage = e.message;
       _setState(AuthState.error);
+      return false;
     } catch (e) {
       _errorMessage = 'Error: $e';
       _setState(AuthState.error);
+      return false;
     }
   }
 
