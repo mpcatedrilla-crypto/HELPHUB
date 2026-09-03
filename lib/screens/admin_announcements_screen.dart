@@ -82,8 +82,8 @@ class _AdminAnnouncementsScreenState extends State<AdminAnnouncementsScreen> {
       drawer: const AdminDrawer(),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showCreateDialog(context, Provider.of<AdminProvider>(context, listen: false)),
-        icon: const Icon(Icons.campaign),
-        label: const Text('New Broadcast'),
+        icon: const Icon(Icons.campaign, color: Colors.white),
+        label: const Text('New Broadcast', style: TextStyle(color: Colors.white)),
         backgroundColor: AppTheme.primaryBlue,
       ),
       body: Consumer<AdminProvider>(
