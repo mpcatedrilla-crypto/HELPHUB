@@ -18,6 +18,11 @@ class AdminProvider extends ChangeNotifier {
     const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
     const initSettings = InitializationSettings(android: androidSettings);
     await _notificationsPlugin.initialize(settings: initSettings);
+
+    // Request notification permissions for Android 13+
+    await _notificationsPlugin
+        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+        ?.requestNotificationsPermission();
   }
 
   void startListeningForEmergencies(VoidCallback onNewEmergency) {
