@@ -27,17 +27,17 @@ class AdminDrawer extends StatelessWidget {
             onTap: () => Navigator.pushReplacementNamed(context, '/admin_queue'),
           ),
           ListTile(
+            leading: const Icon(Icons.verified_user),
+            title: const Text('Resident Verification'),
+            onTap: () => Navigator.pushReplacementNamed(context, '/admin_verification'),
+          ),
+          ListTile(
             leading: const Icon(Icons.history),
             title: const Text('History Reports'),
             onTap: () {
               Navigator.pop(context);
               Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminHistoryScreen()));
             },
-          ),
-          ListTile(
-            leading: const Icon(Icons.group),
-            title: const Text('Resident Verification'),
-            onTap: () => Navigator.pushReplacementNamed(context, '/admin_verification'),
           ),
           ListTile(
             leading: const Icon(Icons.campaign, color: AppTheme.primaryBlue),

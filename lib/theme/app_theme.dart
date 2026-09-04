@@ -13,10 +13,11 @@ class AppTheme {
   static const Color backgroundColor = Color(0xFFF1F5F9);
 
   // Status Colors
-  static const Color statusCritical = Color(0xFFDC2626);
-  static const Color statusHigh = Color(0xFFF59E0B);
-  static const Color statusMedium = Color(0xFF3B82F6);
-  static const Color statusResolved = Color(0xFF10B981);
+  static const Color statusCritical = Color(0xFFDC2626); // Red
+  static const Color statusHigh = Color(0xFFF97316);     // Orange
+  static const Color statusMedium = Color(0xFFEAB308);   // Yellow
+  static const Color statusLow = Color(0xFF10B981);      // Green
+  static const Color statusResolved = Color(0xFF6B7280); // Grey
 
   static ThemeData get lightTheme {
     return ThemeData(

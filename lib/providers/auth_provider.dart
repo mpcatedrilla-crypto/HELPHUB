@@ -73,6 +73,7 @@ class AuthProvider extends ChangeNotifier {
           'full_name': fullName,
           'phone': phone.isEmpty ? null : phone,
           'address': address.isEmpty ? null : address,
+          'status': 'pending'
         }).eq('id', res.user!.id);
         
         _errorMessage = 'Registration successful! Wait for admin approval to log in.';

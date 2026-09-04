@@ -5,6 +5,7 @@ import '../providers/auth_provider.dart';
 import '../providers/report_provider.dart';
 import '../providers/admin_provider.dart';
 import '../theme/app_theme.dart';
+import 'resident_announcements_screen.dart';
 
 class ResidentDashboard extends StatefulWidget {
   const ResidentDashboard({super.key});
@@ -76,7 +77,9 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
                         title: Text(adminProvider.announcements.first['title'] ?? 'Announcement', style: const TextStyle(fontWeight: FontWeight.bold)),
                         subtitle: Text(adminProvider.announcements.first['message'] ?? '', maxLines: 2, overflow: TextOverflow.ellipsis),
                         trailing: const Icon(Icons.chevron_right),
-                        onTap: () {},
+                        onTap: () {
+                          Navigator.push(context, MaterialPageRoute(builder: (_) => const ResidentAnnouncementsScreen()));
+                        },
                       ),
                     ).animate().fade(duration: 400.ms).scale(),
                     const SizedBox(height: 24),
@@ -121,7 +124,9 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
                         color: Colors.white,
                         textColor: AppTheme.primaryBlue,
                         badgeCount: adminProvider.announcements.length,
-                        onTap: () {},
+                        onTap: () {
+                          Navigator.push(context, MaterialPageRoute(builder: (_) => const ResidentAnnouncementsScreen()));
+                        },
                       ),
                     ].animate(interval: 50.ms).fade().scale(),
                   ),

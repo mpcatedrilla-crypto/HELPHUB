@@ -1,10 +1,13 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:audioplayers/audioplayers.dart';
 
 class AdminProvider extends ChangeNotifier {
   final _supabase = Supabase.instance.client;
   final FlutterLocalNotificationsPlugin _notificationsPlugin = FlutterLocalNotificationsPlugin();
+  final AudioPlayer _audioPlayer = AudioPlayer();
   RealtimeChannel? _reportsSubscription;
   
   bool _isLoading = false;
@@ -18,6 +21,19 @@ class AdminProvider extends ChangeNotifier {
     const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
     const initSettings = InitializationSettings(android: androidSettings);
     await _notificationsPlugin.initialize(settings: initSettings);
+
+    // Create a high-importance notification channel explicitly (Android 8+)
+    const channel = AndroidNotificationChannel(
+      'emergency_sos_v3',
+      'SOS Emergency Alerts',
+      description: 'Critical alerts for incoming SOS emergencies',
+      importance: Importance.max,
+      playSound: true,
+      enableVibration: true,
+    );
+    await _notificationsPlugin
+        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(channel);
 
     // Request notification permissions for Android 13+
     await _notificationsPlugin
@@ -35,7 +51,10 @@ class AdminProvider extends ChangeNotifier {
       callback: (payload) {
         final newReport = payload.newRecord;
         if (newReport['is_critical_override'] == true) {
-          _triggerSirenAlert(newReport['title'] ?? 'Emergency SOS');
+          _triggerSirenAlert(
+            newReport['title'] ?? 'Emergency SOS',
+            newReport['profiles']?['full_name'] ?? 'A resident',
+          );
           onNewEmergency();
         }
       },
@@ -47,26 +66,37 @@ class AdminProvider extends ChangeNotifier {
     _reportsSubscription = null;
   }
 
-  Future<void> _triggerSirenAlert(String title) async {
-    const androidDetails = AndroidNotificationDetails(
-      'emergency_sos_channel_v2', // Changed ID to bypass Android channel caching
-      'Critical Emergency Alerts',
-      channelDescription: 'Loud alerts for incoming SOS emergencies',
+  Future<void> _triggerSirenAlert(String title, String reporterName) async {
+    // 1. Play siren sound using audioplayers
+    try {
+      await _audioPlayer.stop();
+      await _audioPlayer.play(AssetSource('sounds/siren.wav'));
+    } catch (_) {}
+
+    // 2. Show heads-up notification
+    final androidDetails = AndroidNotificationDetails(
+      'emergency_sos_v3',
+      'SOS Emergency Alerts',
+      channelDescription: 'Critical alerts for incoming SOS emergencies',
       importance: Importance.max,
       priority: Priority.max,
       playSound: true,
       enableVibration: true,
       fullScreenIntent: true,
+      category: AndroidNotificationCategory.alarm,
+      visibility: NotificationVisibility.public,
+      vibrationPattern: Int64List.fromList([0, 500, 200, 500, 200, 500]),
     );
-    const details = NotificationDetails(android: androidDetails);
+    final details = NotificationDetails(android: androidDetails);
     
     await _notificationsPlugin.show(
       id: 0,
-      title: 'CRITICAL SOS ALERT',
-      body: 'An emergency was just reported: $title',
+      title: '🚨 CRITICAL SOS ALERT',
+      body: '$reporterName has reported an emergency: $title',
       notificationDetails: details,
     );
   }
+
   List<Map<String, dynamic>> _pendingResidents = [];
   List<Map<String, dynamic>> get pendingResidents => _pendingResidents;
 
@@ -95,25 +125,34 @@ class AdminProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> reviewResident(String profileId, String status) async {
+  Future<bool> reviewResident(String profileId, String status) async {
     try {
-      await _supabase
+      final response = await _supabase
           .from('profiles')
           .update({'status': status})
-          .eq('id', profileId);
+          .eq('id', profileId)
+          .select();
       
+      if (response.isEmpty) {
+        throw Exception('Database blocked the update. Did you run the SQL script?');
+      }
+
       // Log audit
-      await _supabase.from('audit_events').insert({
-        'actor_id': _supabase.auth.currentUser!.id,
-        'action': 'REVIEW_RESIDENT',
-        'target_table': 'profiles',
-        'target_id': profileId,
-        'changes': {'new_status': status}
-      });
+      try {
+        await _supabase.from('audit_events').insert({
+          'actor_id': _supabase.auth.currentUser!.id,
+          'action': 'REVIEW_RESIDENT',
+          'target_table': 'profiles',
+          'target_id': profileId,
+          'changes': {'new_status': status}
+        });
+      } catch (_) {}
       
       await fetchPendingResidents();
+      return true;
     } catch (e) {
       debugPrint('Error reviewing resident: $e');
+      return false;
     }
   }
 
@@ -159,7 +198,7 @@ class AdminProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> createAnnouncement(String title, String message, String severity) async {
+  Future<bool> createAnnouncement(String title, String message, String severity) async {
     try {
       await _supabase.from('announcements').insert({
         'title': title,
@@ -167,9 +206,33 @@ class AdminProvider extends ChangeNotifier {
         'severity': severity,
         'created_by': _supabase.auth.currentUser!.id
       });
+      
+      try {
+        await _supabase.from('audit_events').insert({
+          'actor_id': _supabase.auth.currentUser!.id,
+          'action': 'CREATE_ANNOUNCEMENT',
+          'target_table': 'announcements',
+          'target_id': _supabase.auth.currentUser!.id, // mock id since we don't have the inserted id easily
+          'changes': {'title': title, 'severity': severity}
+        });
+      } catch (_) {}
+
       await fetchAnnouncements();
+      return true;
     } catch (e) {
       debugPrint('Error creating announcement: $e');
+      return false;
+    }
+  }
+
+  Future<bool> deleteAnnouncement(String id) async {
+    try {
+      await _supabase.from('announcements').delete().eq('id', id);
+      await fetchAnnouncements();
+      return true;
+    } catch (e) {
+      debugPrint('Error deleting announcement: $e');
+      return false;
     }
   }
 

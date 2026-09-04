@@ -37,17 +37,17 @@ class ReportProvider extends ChangeNotifier {
 
   Future<void> fetchMyReports() async {
     _setLoading(true);
-    try {
-      final userId = _supabase.auth.currentUser?.id;
-      if (userId == null) return;
+      try {
+        final userId = _supabase.auth.currentUser?.id;
+        if (userId == null) return;
 
-      final response = await _supabase
-          .from('reports')
-          .select('*, concern_types(category_name), report_evidence(storage_path)')
-          .eq('resident_id', userId)
-          .order('created_at', ascending: false);
-      
-      _myReports = List<Map<String, dynamic>>.from(response);
+        final response = await _supabase
+            .from('reports')
+            .select('*, concern_types(category_name), report_evidence(storage_path), report_locations(latitude, longitude)')
+            .eq('resident_id', userId)
+            .order('created_at', ascending: false);
+        
+        _myReports = List<Map<String, dynamic>>.from(response);
     } catch (e) {
       _errorMessage = 'Failed to load reports: $e';
     } finally {
@@ -57,16 +57,16 @@ class ReportProvider extends ChangeNotifier {
 
   Future<void> fetchAllReports() async {
     _setLoading(true);
-    try {
-      // Order by priority score descending, then created_at
-      final response = await _supabase
-          .from('reports')
-          .select('*, concern_types(category_name), profiles(full_name), report_evidence(storage_path)')
-          .order('is_critical_override', ascending: false)
-          .order('priority_score', ascending: false)
-          .order('created_at', ascending: true);
-      
-      _allReports = List<Map<String, dynamic>>.from(response);
+      try {
+        // Order by priority score descending, then created_at
+        final response = await _supabase
+            .from('reports')
+            .select('*, concern_types(category_name), profiles(full_name), report_evidence(storage_path), report_locations(latitude, longitude)')
+            .order('is_critical_override', ascending: false)
+            .order('priority_score', ascending: false)
+            .order('created_at', ascending: true);
+        
+        _allReports = List<Map<String, dynamic>>.from(response);
     } catch (e) {
       _errorMessage = 'Failed to load queue: $e';
     } finally {
@@ -157,10 +157,28 @@ class ReportProvider extends ChangeNotifier {
 
   Future<bool> updateReportStatus(String reportId, String newStatus) async {
     try {
-      await _supabase
+      final response = await _supabase
           .from('reports')
           .update({'status': newStatus})
-          .eq('id', reportId);
+          .eq('id', reportId)
+          .select();
+          
+      if (response.isEmpty) {
+        throw Exception('Database blocked the update (RLS rule missing).');
+      }
+
+      // Log to audit_events
+      try {
+        await _supabase.from('audit_events').insert({
+          'actor_id': _supabase.auth.currentUser!.id,
+          'action': 'STATUS_CHANGE',
+          'target_table': 'reports',
+          'target_id': reportId,
+          'changes': {'new_status': newStatus}
+        });
+      } catch (e) {
+        debugPrint('Failed to log audit event: $e');
+      }
       
       // Refresh queue
       await fetchAllReports();
@@ -183,11 +201,26 @@ class ReportProvider extends ChangeNotifier {
         proofUrl = _supabase.storage.from('evidence').getPublicUrl(fileName);
       }
 
-      await _supabase.from('reports').update({
-        'status': 'pending_confirmation',
-        'admin_resolution_notes': notes,
-        if (proofUrl != null) 'admin_proof_url': proofUrl,
-      }).eq('id', reportId);
+      final response = await _supabase.from('reports').update({
+        'status': 'resolved',
+      }).eq('id', reportId).select();
+      
+      if (response.isEmpty) {
+        throw Exception('Database blocked the update (RLS rule missing).');
+      }
+
+      // Log to audit_events
+      try {
+        await _supabase.from('audit_events').insert({
+          'actor_id': _supabase.auth.currentUser!.id,
+          'action': 'RESOLVE_REPORT',
+          'target_table': 'reports',
+          'target_id': reportId,
+          'changes': {'status': 'resolved'}
+        });
+      } catch (e) {
+        debugPrint('Failed to log audit event: $e');
+      }
 
       await fetchAllReports();
       _setLoading(false);

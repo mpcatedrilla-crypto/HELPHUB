@@ -1,3 +1,5 @@
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:flutter/material.dart';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
@@ -19,10 +21,13 @@ class AdminPriorityQueue extends StatefulWidget {
   State<AdminPriorityQueue> createState() => _AdminPriorityQueueState();
 }
 
-class _AdminPriorityQueueState extends State<AdminPriorityQueue> {
+class _AdminPriorityQueueState extends State<AdminPriorityQueue> with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+
   @override
   void initState() {
     super.initState();
+    _tabController = TabController(length: 4, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final reportProvider = Provider.of<ReportProvider>(context, listen: false);
       final adminProvider = Provider.of<AdminProvider>(context, listen: false);
@@ -38,8 +43,57 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue> {
 
   @override
   void dispose() {
+    _tabController.dispose();
     Provider.of<AdminProvider>(context, listen: false).stopListeningForEmergencies();
     super.dispose();
+  }
+
+  Map<String, dynamic> _getBadgeInfo(Map<String, dynamic> r) {
+    final score = r['priority_score'] ?? 0;
+    final isCritical = r['is_critical_override'] == true;
+    Color badgeColor;
+    String badgeText;
+    String priorityLabel;
+
+    if (isCritical || score > 80) {
+      badgeColor = AppTheme.statusCritical;
+      badgeText = 'CRITICAL';
+      priorityLabel = 'Immediate danger or serious public safety concern';
+    } else if (score > 60) {
+      badgeColor = AppTheme.statusHigh;
+      badgeText = 'HIGH';
+      priorityLabel = 'Urgent concern requiring quick action';
+    } else if (score > 30) {
+      badgeColor = AppTheme.statusMedium;
+      badgeText = 'MEDIUM';
+      priorityLabel = 'Important concern, not an emergency';
+    } else {
+      badgeColor = AppTheme.statusLow;
+      badgeText = 'LOW';
+      priorityLabel = 'Routine or lower-urgency concern';
+    }
+
+    // Status overrides
+    switch (r['status']) {
+      case 'acknowledged':
+        badgeColor = AppTheme.primaryBlue; badgeText = 'ACKNOWLEDGED'; priorityLabel = 'Admin has acknowledged this report'; break;
+      case 'in_progress':
+        badgeColor = const Color(0xFF8B5CF6); badgeText = 'IN PROGRESS'; priorityLabel = 'Team is actively working on this'; break;
+      case 'responding':
+        badgeColor = AppTheme.statusCritical; badgeText = 'RESPONDING'; priorityLabel = 'Emergency team is responding'; break;
+      case 'resolved':
+        badgeColor = AppTheme.statusResolved; badgeText = 'RESOLVED'; priorityLabel = 'This report has been resolved'; break;
+      case 'referred':
+        badgeColor = const Color(0xFF0891B2); badgeText = 'REFERRED'; priorityLabel = 'Referred to another authority'; break;
+      case 'false_alarm':
+        badgeColor = Colors.orange.shade700; badgeText = 'FALSE ALARM'; priorityLabel = 'Determined to be a false alarm'; break;
+      case 'closed':
+        badgeColor = Colors.grey; badgeText = 'CLOSED'; priorityLabel = 'Report closed'; break;
+      case 'archived':
+        badgeColor = Colors.grey.shade400; badgeText = 'ARCHIVED'; priorityLabel = 'Report archived'; break;
+    }
+
+    return {'color': badgeColor, 'text': badgeText, 'label': priorityLabel};
   }
 
   @override
@@ -47,10 +101,21 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Priority Queue'),
-        actions: const [
-          Center(child: _LiveBadge()),
-          SizedBox(width: 16),
-        ],
+        actions: const [Center(child: _LiveBadge()), SizedBox(width: 16)],
+        bottom: TabBar(
+          controller: _tabController,
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
+          indicatorColor: Colors.white,
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white60,
+          tabs: const [
+            Tab(icon: Icon(Icons.dashboard, size: 18), text: 'All'),
+            Tab(icon: Icon(Icons.emergency, size: 18), text: 'Emergencies'),
+            Tab(icon: Icon(Icons.hourglass_top, size: 18), text: 'Active'),
+            Tab(icon: Icon(Icons.check_circle, size: 18), text: 'Resolved'),
+          ],
+        ),
       ),
       drawer: const AdminDrawer(),
       body: Consumer2<ReportProvider, AdminProvider>(
@@ -59,100 +124,74 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue> {
             return const Center(child: CircularProgressIndicator());
           }
 
-          final emergencyReports = provider.allReports
-              .where((r) => r['is_critical_override'] == true && r['status'] != 'resolved' && r['status'] != 'rejected' && r['status'] != 'pending_confirmation')
-              .toList();
-              
-          final regularReports = provider.allReports
-              .where((r) => !emergencyReports.contains(r) && r['status'] != 'resolved' && r['status'] != 'rejected' && r['status'] != 'pending_confirmation')
-              .toList();
+          final allReports = provider.allReports;
+          final emergencyReports = allReports.where((r) => r['is_critical_override'] == true).toList();
+          final activeReports = allReports.where((r) => !['resolved', 'closed', 'archived', 'false_alarm'].contains(r['status'])).toList();
+          final resolvedReports = allReports.where((r) => ['resolved', 'closed', 'archived', 'referred', 'false_alarm'].contains(r['status'])).toList();
 
-          return RefreshIndicator(
-            onRefresh: () async {
-              provider.fetchAllReports();
-              adminProvider.fetchRoutingDestinations();
-            },
-            child: SingleChildScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('Active SOS & Emergencies', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: AppTheme.sosRed)),
-                  const SizedBox(height: 12),
-                  
-                  if (emergencyReports.isEmpty)
-                    const Text('No active emergencies.', style: TextStyle(color: Colors.grey)),
-                  
-                  ...emergencyReports.asMap().entries.map((entry) => _buildEmergencyCard(
-                    entry.value['profiles'] != null ? entry.value['profiles']['full_name'] : 'Unknown',
-                    '${entry.value['concern_types']?['category_name'] ?? 'Emergency'} - ${entry.value['title']}',
-                    'Tap to view details', 
-                    timeago.format(DateTime.parse(entry.value['created_at'])),
-                    isCritical: true,
-                    reportId: entry.value['id'],
-                    provider: provider,
-                    evidence: entry.value['report_evidence'],
-                  ).animate().fade(duration: 400.ms).slideX(delay: (entry.key * 100).ms)),
-                  
-                  const SizedBox(height: 32),
-                  
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Priority Queue', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                      TextButton.icon(
-                        onPressed: () {},
-                        icon: const Icon(Icons.sort, size: 16),
-                        label: const Text('Score'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  
-                  if (regularReports.isEmpty)
-                    const Text('No reports in queue.', style: TextStyle(color: Colors.grey)),
-                  
-                  ...regularReports.asMap().entries.map((entry) {
-                    final r = entry.value;
-                    final score = r['priority_score'] ?? 0;
-                    Color badgeColor = AppTheme.statusMedium;
-                    String badgeText = 'MEDIUM';
-                    if (score > 80) { badgeColor = AppTheme.statusCritical; badgeText = 'CRITICAL'; }
-                    else if (score > 60) { badgeColor = AppTheme.statusHigh; badgeText = 'HIGH'; }
-                    
-                    if (r['status'] == 'resolved') {
-                      badgeColor = AppTheme.statusResolved;
-                      badgeText = 'RESOLVED';
-                    } else if (r['status'] == 'acknowledged') {
-                      badgeColor = AppTheme.primaryBlue;
-                      badgeText = 'ACKED';
-                    }
-
-                    return _buildPriorityItem(
-                      score.toString(),
-                      r['title'] ?? 'No Title',
-                      '#${r['id'].toString().substring(0, 8).toUpperCase()} - ${r['profiles']?['full_name'] ?? 'Unknown'}',
-                      badgeText,
-                      badgeColor,
-                      timeago.format(DateTime.parse(r['created_at'])),
-                      reportId: r['id'],
-                      provider: provider,
-                      adminProvider: adminProvider,
-                      currentDestinationId: r['routing_destination_id'],
-                      evidence: r['report_evidence'],
-                    ).animate().fade(duration: 400.ms).slideY(begin: 0.2, delay: (entry.key * 50).ms);
-                  }),
-                ],
-              ),
-            ),
+          return TabBarView(
+            controller: _tabController,
+            children: [
+              _buildReportList(allReports, provider, adminProvider, emptyMsg: 'No reports found.'),
+              _buildReportList(emergencyReports, provider, adminProvider, emptyMsg: 'No active emergencies.'),
+              _buildReportList(activeReports, provider, adminProvider, emptyMsg: 'No active reports.'),
+              _buildReportList(resolvedReports, provider, adminProvider, emptyMsg: 'No resolved reports yet.'),
+            ],
           );
         },
       ),
     );
   }
 
-  Widget _buildEmergencyCard(String name, String details, String phone, String time, {bool isCritical = false, required String reportId, required ReportProvider provider, List<dynamic>? evidence}) {
+  Widget _buildReportList(List<Map<String, dynamic>> reports, ReportProvider provider, AdminProvider adminProvider, {required String emptyMsg}) {
+    return RefreshIndicator(
+      onRefresh: () async {
+        provider.fetchAllReports();
+        adminProvider.fetchRoutingDestinations();
+      },
+      child: reports.isEmpty
+          ? ListView(
+              children: [
+                const SizedBox(height: 80),
+                Center(child: Column(
+                  children: [
+                    const Icon(Icons.inbox, size: 64, color: Colors.grey),
+                    const SizedBox(height: 12),
+                    Text(emptyMsg, style: const TextStyle(color: Colors.grey, fontSize: 16)),
+                  ],
+                )),
+              ],
+            )
+          : ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: reports.length,
+              itemBuilder: (context, index) {
+                final r = reports[index];
+                final badge = _getBadgeInfo(r);
+                final score = r['priority_score'] ?? 0;
+                return _buildPriorityItem(
+                  score.toString(),
+                  r['title'] ?? 'No Title',
+                  '#${r['id'].toString().substring(0, 8).toUpperCase()} · ${r['profiles']?['full_name'] ?? 'Unknown'}',
+                  badge['text'],
+                  badge['color'],
+                  timeago.format(DateTime.parse(r['created_at'])),
+                  reportId: r['id'],
+                  provider: provider,
+                  adminProvider: adminProvider,
+                  currentDestinationId: r['routing_destination_id'],
+                  evidence: r['report_evidence'],
+                  location: r['report_locations'],
+                  priorityLabel: badge['label'],
+                  currentStatus: r['status'] ?? 'submitted',
+                  isEmergency: r['is_critical_override'] == true,
+                ).animate().fade(duration: 300.ms).slideY(begin: 0.1, delay: (index * 40).ms);
+              },
+            ),
+    );
+  }
+
+  Widget _buildEmergencyCard(String name, String details, String phone, String time, {bool isCritical = false, required String reportId, required ReportProvider provider, List<dynamic>? evidence, dynamic location}) {
     return Card(
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
@@ -202,22 +241,61 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue> {
                 ),
               ],
             ),
+            if (location != null) ...[
+              const SizedBox(height: 8),
+              InkWell(
+                onTap: () {
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => _FullScreenMapViewer(lat: location["latitude"], lng: location["longitude"])));
+                },
+                child: Row(
+                  children: [
+                    const Icon(Icons.map, color: AppTheme.primaryBlue, size: 16),
+                    const SizedBox(width: 4),
+                    const Text('View Pinned Map Location', style: TextStyle(fontSize: 14, color: AppTheme.primaryBlue, fontWeight: FontWeight.bold, decoration: TextDecoration.underline)),
+                  ],
+                ),
+              ),
+            ],
             if (evidence != null && evidence.isNotEmpty) ...[
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text('Evidence Photos', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
+              ),
+              const SizedBox(height: 6),
               SizedBox(
-                height: 80,
+                height: 90,
                 child: ListView.builder(
                   scrollDirection: Axis.horizontal,
                   itemCount: evidence.length,
                   itemBuilder: (context, index) {
                     final storagePath = evidence[index]['storage_path'];
                     final url = provider.getEvidenceUrl(storagePath);
-                    return Container(
-                      margin: const EdgeInsets.only(right: 8),
-                      width: 80,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(8),
-                        image: DecorationImage(image: NetworkImage(url), fit: BoxFit.cover),
+                    return GestureDetector(
+                      onTap: () {
+                        Navigator.push(context, MaterialPageRoute(builder: (_) => _FullScreenImageViewer(url: url)));
+                      },
+                      child: Stack(
+                        children: [
+                          Container(
+                            margin: const EdgeInsets.only(right: 8),
+                            width: 90,
+                            height: 90,
+                            decoration: BoxDecoration(
+                              borderRadius: BorderRadius.circular(10),
+                              image: DecorationImage(image: NetworkImage(url), fit: BoxFit.cover),
+                            ),
+                          ),
+                          Positioned(
+                            bottom: 4,
+                            right: 12,
+                            child: Container(
+                              padding: const EdgeInsets.all(2),
+                              decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(4)),
+                              child: const Icon(Icons.fullscreen, color: Colors.white, size: 16),
+                            ),
+                          ),
+                        ],
                       ),
                     );
                   },
@@ -229,7 +307,15 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue> {
               children: [
                 Expanded(
                   child: ElevatedButton.icon(
-                    onPressed: () => provider.updateReportStatus(reportId, 'acknowledged'), 
+                    onPressed: () async {
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Acknowledging report...')));
+                      final success = await provider.updateReportStatus(reportId, 'acknowledged');
+                      if (success) {
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Report successfully acknowledged!')));
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(provider.errorMessage ?? 'Database rejected the update. Please check RLS.')));
+                      }
+                    }, 
                     icon: const Icon(Icons.check_circle_outline), 
                     label: const Text('Acknowledge')
                   )
@@ -310,6 +396,8 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue> {
                     final success = await provider.resolveReport(reportId, notesController.text, proofImage);
                     if (success) {
                       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Resolution Sent to Resident for Confirmation')));
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(provider.errorMessage ?? 'Failed to update database. Did you run the SQL script?')));
                     }
                   },
                   child: const Text('Submit Resolution'),
@@ -331,7 +419,7 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue> {
     );
   }
 
-  Widget _buildPriorityItem(String score, String title, String subtitle, String badgeText, Color badgeColor, String date, {required String reportId, required ReportProvider provider, required AdminProvider adminProvider, String? currentDestinationId, List<dynamic>? evidence}) {
+  Widget _buildPriorityItem(String score, String title, String subtitle, String badgeText, Color badgeColor, String date, {required String reportId, required ReportProvider provider, required AdminProvider adminProvider, String? currentDestinationId, List<dynamic>? evidence, dynamic location, String priorityLabel = '', String currentStatus = 'submitted', bool isEmergency = false}) {
     
     String assignedTo = "Unassigned";
     if (currentDestinationId != null) {
@@ -339,131 +427,237 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue> {
       if (dest != null) assignedTo = dest['destination_name'];
     }
 
+    // Build context-aware next-status actions based on workflow
+    List<Map<String, dynamic>> nextActions = [];
+    if (isEmergency) {
+      // Emergency workflow: submitted → acknowledged → responding → resolved|referred|false_alarm → closed
+      if (currentStatus == 'submitted') {
+        nextActions = [{'label': 'Acknowledge', 'icon': Icons.check_circle, 'status': 'acknowledged', 'color': AppTheme.primaryBlue}];
+      } else if (currentStatus == 'acknowledged') {
+        nextActions = [{'label': 'Mark Responding', 'icon': Icons.directions_run, 'status': 'responding', 'color': AppTheme.statusCritical}];
+      } else if (currentStatus == 'responding') {
+        nextActions = [
+          {'label': 'Mark Resolved', 'icon': Icons.check, 'status': 'resolved', 'color': AppTheme.statusLow, 'requiresDialog': true},
+          {'label': 'Refer to Authority', 'icon': Icons.call_made, 'status': 'referred', 'color': const Color(0xFF0891B2)},
+          {'label': 'Mark False Alarm', 'icon': Icons.warning_amber, 'status': 'false_alarm', 'color': Colors.orange},
+        ];
+      } else if (['resolved', 'referred', 'false_alarm'].contains(currentStatus)) {
+        nextActions = [{'label': 'Close Report', 'icon': Icons.folder_off, 'status': 'closed', 'color': Colors.grey}];
+      }
+    } else {
+      // Normal workflow: submitted → acknowledged → in_progress → resolved → closed → archived
+      if (currentStatus == 'submitted') {
+        nextActions = [{'label': 'Acknowledge / Under Review', 'icon': Icons.visibility, 'status': 'acknowledged', 'color': AppTheme.primaryBlue}];
+      } else if (currentStatus == 'acknowledged') {
+        nextActions = [{'label': 'Mark In Progress', 'icon': Icons.engineering, 'status': 'in_progress', 'color': const Color(0xFF8B5CF6)}];
+      } else if (currentStatus == 'in_progress') {
+        nextActions = [{'label': 'Mark Resolved', 'icon': Icons.check, 'status': 'resolved', 'color': AppTheme.statusLow, 'requiresDialog': true}];
+      } else if (currentStatus == 'resolved') {
+        nextActions = [{'label': 'Close Report', 'icon': Icons.folder_off, 'status': 'closed', 'color': Colors.grey}];
+      } else if (currentStatus == 'closed') {
+        nextActions = [{'label': 'Archive Report', 'icon': Icons.archive, 'status': 'archived', 'color': Colors.grey.shade600}];
+      }
+    }
+
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      child: Column(
-        children: [
-          ListTile(
-            contentPadding: const EdgeInsets.all(12),
-            leading: Container(
-              width: 50,
-              height: 50,
-              decoration: BoxDecoration(
-                color: badgeColor.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(8),
-              ),
+      clipBehavior: Clip.antiAlias,
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(width: 6, color: badgeColor),
+            Expanded(
               child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text(score, style: TextStyle(color: badgeColor, fontWeight: FontWeight.bold, fontSize: 18)),
-                  Text('score', style: TextStyle(color: badgeColor, fontSize: 10)),
+                  ListTile(
+                    contentPadding: const EdgeInsets.only(left: 12, right: 12, top: 8, bottom: 4),
+                    leading: Container(
+                      width: 50,
+                      height: 50,
+                      decoration: BoxDecoration(
+                        color: badgeColor.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(score, style: TextStyle(color: badgeColor, fontWeight: FontWeight.bold, fontSize: 18)),
+                          Text('score', style: TextStyle(color: badgeColor, fontSize: 10)),
+                        ],
+                      ),
+                    ),
+                    title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(subtitle, style: const TextStyle(fontSize: 12)),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                              decoration: BoxDecoration(color: badgeColor, borderRadius: BorderRadius.circular(10)),
+                              child: Text(badgeText, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(child: Text(priorityLabel, style: TextStyle(fontSize: 10, color: Colors.grey.shade600), overflow: TextOverflow.ellipsis)),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            const Icon(Icons.group, size: 12, color: Colors.grey),
+                            const SizedBox(width: 4),
+                            Text('Assigned to: $assignedTo', style: const TextStyle(fontSize: 12, color: AppTheme.primaryBlue, fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                        if (location != null) ...[
+                          const SizedBox(height: 8),
+                          InkWell(
+                            onTap: () {
+                              Navigator.push(context, MaterialPageRoute(builder: (_) => _FullScreenMapViewer(lat: location["latitude"], lng: location["longitude"])));
+                            },
+                            child: Row(
+                              children: [
+                                const Icon(Icons.map, color: AppTheme.primaryBlue, size: 14),
+                                const SizedBox(width: 4),
+                                const Text('View Pinned Map Location', style: TextStyle(fontSize: 12, color: AppTheme.primaryBlue, fontWeight: FontWeight.bold, decoration: TextDecoration.underline)),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    trailing: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text(date, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                      ],
+                    ),
+                    onTap: () {
+                      showModalBottomSheet(
+                        context: context,
+                        builder: (ctx) => SafeArea(
+                          child: SingleChildScrollView(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Padding(
+                                  padding: const EdgeInsets.all(16.0),
+                                  child: Row(
+                                    children: [
+                                      Expanded(child: Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold))),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                        decoration: BoxDecoration(color: badgeColor, borderRadius: BorderRadius.circular(12)),
+                                        child: Text(badgeText, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                // Workflow Status Actions
+                                if (nextActions.isNotEmpty) ...[
+                                  const Divider(),
+                                  const Padding(
+                                    padding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                                    child: Align(alignment: Alignment.centerLeft, child: Text('WORKFLOW ACTIONS', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey, letterSpacing: 1.2))),
+                                  ),
+                                  ...nextActions.map((action) => ListTile(
+                                    leading: Icon(action['icon'], color: action['color']),
+                                    title: Text(action['label'], style: TextStyle(color: action['color'], fontWeight: FontWeight.w600)),
+                                    onTap: () async {
+                                      Navigator.pop(ctx);
+                                      if (action['requiresDialog'] == true) {
+                                        _showResolveDialog(context, provider, reportId);
+                                      } else {
+                                        final success = await provider.updateReportStatus(reportId, action['status']);
+                                        if (context.mounted) {
+                                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                                            content: Text(success ? 'Status updated to "${action['label']}"' : (provider.errorMessage ?? 'Update failed')),
+                                            backgroundColor: success ? Colors.green : Colors.red,
+                                          ));
+                                        }
+                                      }
+                                    },
+                                  )),
+                                ],
+                                const Divider(),
+                                const Padding(
+                                  padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
+                                  child: Align(alignment: Alignment.centerLeft, child: Text('DISPATCH TEAM', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey, letterSpacing: 1.2))),
+                                ),
+                                ...adminProvider.routingDestinations.map((dest) => ListTile(
+                                  leading: const Icon(Icons.local_shipping),
+                                  title: Text(dest['destination_name']),
+                                  trailing: currentDestinationId == dest['id'] ? const Icon(Icons.check, color: AppTheme.primaryBlue) : null,
+                                  onTap: () {
+                                    adminProvider.assignReportDestination(reportId, dest['id']);
+                                    Navigator.pop(ctx);
+                                  },
+                                )),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  if (evidence != null && evidence.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(left: 12, right: 12, bottom: 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Evidence Photos', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
+                          const SizedBox(height: 6),
+                          SizedBox(
+                            height: 90,
+                            child: ListView.builder(
+                              scrollDirection: Axis.horizontal,
+                              itemCount: evidence.length,
+                              itemBuilder: (context, index) {
+                                final storagePath = evidence[index]['storage_path'];
+                                final url = provider.getEvidenceUrl(storagePath);
+                                return GestureDetector(
+                                  onTap: () {
+                                    Navigator.push(context, MaterialPageRoute(builder: (_) => _FullScreenImageViewer(url: url)));
+                                  },
+                                  child: Stack(
+                                    children: [
+                                      Container(
+                                        margin: const EdgeInsets.only(right: 8),
+                                        width: 90,
+                                        height: 90,
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(10),
+                                          image: DecorationImage(image: NetworkImage(url), fit: BoxFit.cover),
+                                        ),
+                                      ),
+                                      Positioned(
+                                        bottom: 4,
+                                        right: 12,
+                                        child: Container(
+                                          padding: const EdgeInsets.all(2),
+                                          decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(4)),
+                                          child: const Icon(Icons.fullscreen, color: Colors.white, size: 16),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                 ],
               ),
             ),
-            title: Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(subtitle, style: const TextStyle(fontSize: 12)),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    const Icon(Icons.group, size: 12, color: Colors.grey),
-                    const SizedBox(width: 4),
-                    Text('Assigned to: $assignedTo', style: const TextStyle(fontSize: 12, color: AppTheme.primaryBlue, fontWeight: FontWeight.bold)),
-                  ],
-                )
-              ],
-            ),
-            trailing: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: badgeColor,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(badgeText, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold)),
-                ),
-                const SizedBox(height: 4),
-                Text(date, style: const TextStyle(color: Colors.grey, fontSize: 12)),
-              ],
-            ),
-            onTap: () {
-              showModalBottomSheet(
-                context: context,
-                builder: (ctx) => SafeArea(
-                  child: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Padding(
-                          padding: EdgeInsets.all(16.0),
-                          child: Text('Report Actions', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                        ),
-                        ListTile(
-                          leading: const Icon(Icons.check_circle, color: AppTheme.primaryBlue),
-                          title: const Text('Mark Acknowledged'),
-                          onTap: () {
-                            provider.updateReportStatus(reportId, 'acknowledged');
-                            Navigator.pop(ctx);
-                          },
-                        ),
-                          ListTile(
-                            leading: const Icon(Icons.check, color: AppTheme.statusResolved),
-                            title: const Text('Mark Resolved'),
-                            onTap: () {
-                              Navigator.pop(ctx);
-                              _showResolveDialog(context, provider, reportId);
-                            },
-                          ),
-                        const Divider(),
-                        const Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-                          child: Align(alignment: Alignment.centerLeft, child: Text('Dispatch Team', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.grey))),
-                        ),
-                        ...adminProvider.routingDestinations.map((dest) => ListTile(
-                          leading: const Icon(Icons.local_shipping),
-                          title: Text(dest['destination_name']),
-                          trailing: currentDestinationId == dest['id'] ? const Icon(Icons.check, color: AppTheme.primaryBlue) : null,
-                          onTap: () {
-                            adminProvider.assignReportDestination(reportId, dest['id']);
-                            Navigator.pop(ctx);
-                          },
-                        )),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-          if (evidence != null && evidence.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(left: 12, right: 12, bottom: 12),
-              child: SizedBox(
-                height: 80,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: evidence.length,
-                  itemBuilder: (context, index) {
-                    final storagePath = evidence[index]['storage_path'];
-                    final url = provider.getEvidenceUrl(storagePath);
-                    return Container(
-                      margin: const EdgeInsets.only(right: 8),
-                      width: 80,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(8),
-                        image: DecorationImage(image: NetworkImage(url), fit: BoxFit.cover),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -490,3 +684,65 @@ class _LiveBadge extends StatelessWidget {
     );
   }
 }
+
+
+class _FullScreenImageViewer extends StatelessWidget {
+  final String url;
+  const _FullScreenImageViewer({required this.url});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        iconTheme: const IconThemeData(color: Colors.white),
+      ),
+      body: Center(
+        child: InteractiveViewer(
+          child: Image.network(url),
+        ),
+      ),
+    );
+  }
+}
+
+
+
+
+class _FullScreenMapViewer extends StatelessWidget {
+  final double lat;
+  final double lng;
+  
+  const _FullScreenMapViewer({required this.lat, required this.lng});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Pinned Location')),
+      body: FlutterMap(
+        options: MapOptions(
+          initialCenter: LatLng(lat, lng),
+          initialZoom: 16.0,
+        ),
+        children: [
+          TileLayer(
+            urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+            userAgentPackageName: 'com.example.helphub',
+          ),
+          MarkerLayer(
+            markers: [
+              Marker(
+                point: LatLng(lat, lng),
+                width: 80,
+                height: 80,
+                child: const Icon(Icons.location_on, color: Colors.red, size: 40),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+

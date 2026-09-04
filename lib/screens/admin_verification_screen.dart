@@ -86,9 +86,16 @@ class _AdminVerificationScreenState extends State<AdminVerificationScreen> {
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: status == 'approved' ? AppTheme.statusResolved : AppTheme.sosRed),
-            onPressed: () {
-              provider.reviewResident(id, status);
+            onPressed: () async {
               Navigator.pop(ctx);
+              final success = await provider.reviewResident(id, status);
+              if (context.mounted) {
+                if (success) {
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Resident $status successfully!'), backgroundColor: Colors.green));
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to update. Did you run the SQL script?'), backgroundColor: Colors.red));
+                }
+              }
             },
             child: const Text('Confirm'),
           ),
