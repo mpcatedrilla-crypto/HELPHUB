@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -6,10 +7,11 @@ import 'package:audioplayers/audioplayers.dart';
 
 class AdminProvider extends ChangeNotifier {
   final _supabase = Supabase.instance.client;
-  final FlutterLocalNotificationsPlugin _notificationsPlugin = FlutterLocalNotificationsPlugin();
+  final FlutterLocalNotificationsPlugin _notificationsPlugin =
+      FlutterLocalNotificationsPlugin();
   final AudioPlayer _audioPlayer = AudioPlayer();
   RealtimeChannel? _reportsSubscription;
-  
+
   bool _isLoading = false;
   bool get isLoading => _isLoading;
 
@@ -18,7 +20,9 @@ class AdminProvider extends ChangeNotifier {
   }
 
   Future<void> _initNotifications() async {
-    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+    const androidSettings = AndroidInitializationSettings(
+      '@mipmap/ic_launcher',
+    );
     const initSettings = InitializationSettings(android: androidSettings);
     await _notificationsPlugin.initialize(settings: initSettings);
 
@@ -32,33 +36,40 @@ class AdminProvider extends ChangeNotifier {
       enableVibration: true,
     );
     await _notificationsPlugin
-        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
         ?.createNotificationChannel(channel);
 
     // Request notification permissions for Android 13+
     await _notificationsPlugin
-        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
         ?.requestNotificationsPermission();
   }
 
   void startListeningForEmergencies(VoidCallback onNewEmergency) {
     if (_reportsSubscription != null) return;
 
-    _reportsSubscription = _supabase.channel('public:reports').onPostgresChanges(
-      event: PostgresChangeEvent.insert,
-      schema: 'public',
-      table: 'reports',
-      callback: (payload) {
-        final newReport = payload.newRecord;
-        if (newReport['is_critical_override'] == true) {
-          _triggerSirenAlert(
-            newReport['title'] ?? 'Emergency SOS',
-            newReport['profiles']?['full_name'] ?? 'A resident',
-          );
-          onNewEmergency();
-        }
-      },
-    ).subscribe();
+    _reportsSubscription = _supabase
+        .channel('public:reports')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'reports',
+          callback: (payload) {
+            final newReport = payload.newRecord;
+            if (newReport['is_critical_override'] == true) {
+              _triggerSirenAlert(
+                newReport['title'] ?? 'Emergency SOS',
+                newReport['profiles']?['full_name'] ?? 'A resident',
+              );
+              onNewEmergency();
+            }
+          },
+        )
+        .subscribe();
   }
 
   void stopListeningForEmergencies() {
@@ -88,7 +99,7 @@ class AdminProvider extends ChangeNotifier {
       vibrationPattern: Int64List.fromList([0, 500, 200, 500, 200, 500]),
     );
     final details = NotificationDetails(android: androidDetails);
-    
+
     await _notificationsPlugin.show(
       id: 0,
       title: '🚨 CRITICAL SOS ALERT',
@@ -132,9 +143,11 @@ class AdminProvider extends ChangeNotifier {
           .update({'status': status})
           .eq('id', profileId)
           .select();
-      
+
       if (response.isEmpty) {
-        throw Exception('Database blocked the update. Did you run the SQL script?');
+        throw Exception(
+          'Database blocked the update. Did you run the SQL script?',
+        );
       }
 
       // Log audit
@@ -144,10 +157,10 @@ class AdminProvider extends ChangeNotifier {
           'action': 'REVIEW_RESIDENT',
           'target_table': 'profiles',
           'target_id': profileId,
-          'changes': {'new_status': status}
+          'changes': {'new_status': status},
         });
       } catch (_) {}
-      
+
       await fetchPendingResidents();
       return true;
     } catch (e) {
@@ -166,19 +179,22 @@ class AdminProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> assignReportDestination(String reportId, String destinationId) async {
+  Future<void> assignReportDestination(
+    String reportId,
+    String destinationId,
+  ) async {
     try {
       await _supabase
           .from('reports')
           .update({'routing_destination_id': destinationId})
           .eq('id', reportId);
-          
+
       await _supabase.from('audit_events').insert({
         'actor_id': _supabase.auth.currentUser!.id,
         'action': 'DISPATCH_REPORT',
         'target_table': 'reports',
         'target_id': reportId,
-        'changes': {'routing_destination_id': destinationId}
+        'changes': {'routing_destination_id': destinationId},
       });
     } catch (e) {
       debugPrint('Error dispatching: $e');
@@ -198,24 +214,35 @@ class AdminProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> createAnnouncement(String title, String message, String severity) async {
+  Future<bool> createAnnouncement(
+    String title,
+    String message,
+    String severity,
+  ) async {
     try {
-      await _supabase.from('announcements').insert({
-        'title': title,
-        'message': message,
-        'severity': severity,
-        'created_by': _supabase.auth.currentUser!.id
-      });
-      
+      final insertedAnnouncement = await _supabase
+          .from('announcements')
+          .insert({
+            'title': title,
+            'message': message,
+            'severity': severity,
+            'created_by': _supabase.auth.currentUser!.id,
+          })
+          .select('id')
+          .single();
+      final announcementId = insertedAnnouncement['id'] as String;
+
       try {
         await _supabase.from('audit_events').insert({
           'actor_id': _supabase.auth.currentUser!.id,
           'action': 'CREATE_ANNOUNCEMENT',
           'target_table': 'announcements',
-          'target_id': _supabase.auth.currentUser!.id, // mock id since we don't have the inserted id easily
-          'changes': {'title': title, 'severity': severity}
+          'target_id': announcementId,
+          'changes': {'title': title, 'severity': severity},
         });
-      } catch (_) {}
+      } catch (e) {
+        debugPrint('Announcement created, but audit logging failed: $e');
+      }
 
       await fetchAnnouncements();
       return true;

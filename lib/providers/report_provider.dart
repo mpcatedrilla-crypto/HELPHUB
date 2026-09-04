@@ -1,4 +1,5 @@
 import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -19,8 +20,10 @@ class ReportProvider extends ChangeNotifier {
   List<Map<String, dynamic>> get concernTypes => _concernTypes;
 
   // Derived metrics for Dashboard
-  int get activeReportsCount => _myReports.where((r) => r['status'] != 'resolved').length;
-  int get resolvedReportsCount => _myReports.where((r) => r['status'] == 'resolved').length;
+  int get activeReportsCount =>
+      _myReports.where((r) => r['status'] != 'resolved').length;
+  int get resolvedReportsCount =>
+      _myReports.where((r) => r['status'] == 'resolved').length;
 
   Future<void> fetchConcernTypes() async {
     try {
@@ -37,17 +40,19 @@ class ReportProvider extends ChangeNotifier {
 
   Future<void> fetchMyReports() async {
     _setLoading(true);
-      try {
-        final userId = _supabase.auth.currentUser?.id;
-        if (userId == null) return;
+    try {
+      final userId = _supabase.auth.currentUser?.id;
+      if (userId == null) return;
 
-        final response = await _supabase
-            .from('reports')
-            .select('*, concern_types(category_name), report_evidence(storage_path), report_locations(latitude, longitude)')
-            .eq('resident_id', userId)
-            .order('created_at', ascending: false);
-        
-        _myReports = List<Map<String, dynamic>>.from(response);
+      final response = await _supabase
+          .from('reports')
+          .select(
+            '*, concern_types(category_name), report_evidence(storage_path), report_locations(latitude, longitude)',
+          )
+          .eq('resident_id', userId)
+          .order('created_at', ascending: false);
+
+      _myReports = List<Map<String, dynamic>>.from(response);
     } catch (e) {
       _errorMessage = 'Failed to load reports: $e';
     } finally {
@@ -57,16 +62,19 @@ class ReportProvider extends ChangeNotifier {
 
   Future<void> fetchAllReports() async {
     _setLoading(true);
-      try {
-        // Order by priority score descending, then created_at
-        final response = await _supabase
-            .from('reports')
-            .select('*, concern_types(category_name), profiles(full_name), report_evidence(storage_path), report_locations(latitude, longitude)')
-            .order('is_critical_override', ascending: false)
-            .order('priority_score', ascending: false)
-            .order('created_at', ascending: true);
-        
-        _allReports = List<Map<String, dynamic>>.from(response);
+    try {
+      _errorMessage = null;
+      // Order by priority score descending, then created_at
+      final response = await _supabase
+          .from('reports')
+          .select(
+            '*, concern_types(id, category_name), profiles(id, full_name, status), report_evidence(storage_path), report_locations(latitude, longitude)',
+          )
+          .order('is_critical_override', ascending: false)
+          .order('priority_score', ascending: false)
+          .order('created_at', ascending: true);
+
+      _allReports = List<Map<String, dynamic>>.from(response);
     } catch (e) {
       _errorMessage = 'Failed to load queue: $e';
     } finally {
@@ -99,19 +107,23 @@ class ReportProvider extends ChangeNotifier {
       int score = isEmergency ? 100 : (populationScale * 10);
 
       // Insert report and get the generated ID
-      final reportRes = await _supabase.from('reports').insert({
-        'resident_id': userId,
-        'concern_type_id': typeId,
-        'title': title,
-        'description': description,
-        'resident_declared_urgency': populationScale,
-        'affected_people_count': populationScale,
-        'vulnerable_groups': vulnerableGroups,
-        'is_critical_override': isEmergency,
-        'priority_score': score,
-        'status': 'submitted',
-        'address_notes': addressNotes, // Optional textual address
-      }).select('id').single();
+      final reportRes = await _supabase
+          .from('reports')
+          .insert({
+            'resident_id': userId,
+            'concern_type_id': typeId,
+            'title': title,
+            'description': description,
+            'resident_declared_urgency': populationScale,
+            'affected_people_count': populationScale,
+            'vulnerable_groups': vulnerableGroups,
+            'is_critical_override': isEmergency,
+            'priority_score': score,
+            'status': 'submitted',
+            'address_notes': addressNotes, // Optional textual address
+          })
+          .select('id')
+          .single();
 
       final reportId = reportRes['id'];
 
@@ -130,12 +142,13 @@ class ReportProvider extends ChangeNotifier {
         for (var i = 0; i < evidenceImages.length; i++) {
           final file = evidenceImages[i];
           final fileExt = file.path.split('.').last;
-          final fileName = '${DateTime.now().millisecondsSinceEpoch}_$i.$fileExt';
+          final fileName =
+              '${DateTime.now().millisecondsSinceEpoch}_$i.$fileExt';
           final storagePath = '$userId/$reportId/$fileName';
-          
+
           // Upload to Supabase Storage
           await _supabase.storage.from('evidence').upload(storagePath, file);
-          
+
           // Link in database
           await _supabase.from('report_evidence').insert({
             'report_id': reportId,
@@ -143,7 +156,7 @@ class ReportProvider extends ChangeNotifier {
           });
         }
       }
-      
+
       // Refresh list
       await fetchMyReports();
       return true;
@@ -162,7 +175,7 @@ class ReportProvider extends ChangeNotifier {
           .update({'status': newStatus})
           .eq('id', reportId)
           .select();
-          
+
       if (response.isEmpty) {
         throw Exception('Database blocked the update (RLS rule missing).');
       }
@@ -174,12 +187,12 @@ class ReportProvider extends ChangeNotifier {
           'action': 'STATUS_CHANGE',
           'target_table': 'reports',
           'target_id': reportId,
-          'changes': {'new_status': newStatus}
+          'changes': {'new_status': newStatus},
         });
       } catch (e) {
         debugPrint('Failed to log audit event: $e');
       }
-      
+
       // Refresh queue
       await fetchAllReports();
       return true;
@@ -190,21 +203,31 @@ class ReportProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> resolveReport(String reportId, String notes, File? proofImage) async {
+  Future<bool> resolveReport(
+    String reportId,
+    String notes,
+    File? proofImage,
+  ) async {
     try {
       _setLoading(true);
       String? proofUrl;
-      
+
       if (proofImage != null) {
         final fileName = '${DateTime.now().millisecondsSinceEpoch}_proof.jpg';
         await _supabase.storage.from('evidence').upload(fileName, proofImage);
         proofUrl = _supabase.storage.from('evidence').getPublicUrl(fileName);
       }
 
-      final response = await _supabase.from('reports').update({
-        'status': 'resolved',
-      }).eq('id', reportId).select();
-      
+      final response = await _supabase
+          .from('reports')
+          .update({
+            'status': 'resolved',
+            'admin_resolution_notes': notes.trim(),
+            'admin_proof_url': proofUrl,
+          })
+          .eq('id', reportId)
+          .select();
+
       if (response.isEmpty) {
         throw Exception('Database blocked the update (RLS rule missing).');
       }
@@ -216,7 +239,11 @@ class ReportProvider extends ChangeNotifier {
           'action': 'RESOLVE_REPORT',
           'target_table': 'reports',
           'target_id': reportId,
-          'changes': {'status': 'resolved'}
+          'changes': {
+            'status': 'resolved',
+            'has_resolution_notes': notes.trim().isNotEmpty,
+            'has_proof_image': proofUrl != null,
+          },
         });
       } catch (e) {
         debugPrint('Failed to log audit event: $e');
