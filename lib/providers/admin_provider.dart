@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:audioplayers/audioplayers.dart';
@@ -11,15 +13,39 @@ class AdminProvider extends ChangeNotifier {
       FlutterLocalNotificationsPlugin();
   final AudioPlayer _audioPlayer = AudioPlayer();
   RealtimeChannel? _reportsSubscription;
+  StreamSubscription<RemoteMessage>? _foregroundMessageSubscription;
+  StreamSubscription<RemoteMessage>? _openedMessageSubscription;
+  StreamSubscription<String>? _tokenRefreshSubscription;
+  VoidCallback? _onNewEmergency;
+  bool _isAdminSessionActive = false;
+  bool _notificationsInitialized = false;
+  bool _remotePushInitialized = false;
+  final Map<String, DateTime> _recentAlertIds = {};
 
   bool _isLoading = false;
   bool get isLoading => _isLoading;
 
-  AdminProvider() {
-    _initNotifications();
+  AdminProvider();
+
+  void setAdminSessionActive(bool isActive) {
+    if (_isAdminSessionActive == isActive) return;
+    _isAdminSessionActive = isActive;
+
+    if (isActive) {
+      _initNotifications();
+      _initRemotePush();
+      _ensureEmergencySubscription();
+    } else {
+      _onNewEmergency = null;
+      _cancelEmergencySubscription();
+      _disposeRemotePushListeners();
+      _audioPlayer.stop();
+    }
   }
 
   Future<void> _initNotifications() async {
+    if (_notificationsInitialized) return;
+    _notificationsInitialized = true;
     const androidSettings = AndroidInitializationSettings(
       '@mipmap/ic_launcher',
     );
@@ -28,11 +54,12 @@ class AdminProvider extends ChangeNotifier {
 
     // Create a high-importance notification channel explicitly (Android 8+)
     const channel = AndroidNotificationChannel(
-      'emergency_sos_v3',
+      'emergency_sos_v4',
       'SOS Emergency Alerts',
       description: 'Critical alerts for incoming SOS emergencies',
       importance: Importance.max,
       playSound: true,
+      sound: RawResourceAndroidNotificationSound('siren'),
       enableVibration: true,
     );
     await _notificationsPlugin
@@ -49,9 +76,89 @@ class AdminProvider extends ChangeNotifier {
         ?.requestNotificationsPermission();
   }
 
-  void startListeningForEmergencies(VoidCallback onNewEmergency) {
-    if (_reportsSubscription != null) return;
+  Future<void> _initRemotePush() async {
+    if (_remotePushInitialized) return;
+    _remotePushInitialized = true;
 
+    try {
+      final messaging = FirebaseMessaging.instance;
+      await messaging.setAutoInitEnabled(true);
+      await messaging.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+        criticalAlert: true,
+      );
+
+      final token = await messaging.getToken();
+      if (token != null) await _savePushToken(token);
+
+      _tokenRefreshSubscription = messaging.onTokenRefresh.listen(
+        _savePushToken,
+      );
+      _foregroundMessageSubscription = FirebaseMessaging.onMessage.listen(
+        _handleRemoteEmergency,
+      );
+      _openedMessageSubscription = FirebaseMessaging.onMessageOpenedApp.listen(
+        (_) => _onNewEmergency?.call(),
+      );
+
+      final initialMessage = await messaging.getInitialMessage();
+      if (initialMessage != null) _onNewEmergency?.call();
+    } catch (error) {
+      debugPrint('Unable to initialize emergency push notifications: $error');
+      _remotePushInitialized = false;
+    }
+  }
+
+  Future<void> _savePushToken(String token) async {
+    final user = _supabase.auth.currentUser;
+    if (!_isAdminSessionActive || user == null) return;
+
+    try {
+      await _supabase.from('admin_push_tokens').upsert({
+        'token': token,
+        'user_id': user.id,
+        'platform': 'android',
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      }, onConflict: 'token');
+    } catch (error) {
+      debugPrint('Unable to register this device for SOS alerts: $error');
+    }
+  }
+
+  void _handleRemoteEmergency(RemoteMessage message) {
+    if (!_isAdminSessionActive) return;
+    final type = message.data['type']?.toString();
+    if (type != null && type != 'critical_sos') return;
+
+    final reportId = message.data['report_id']?.toString();
+    final title =
+        message.data['report_title']?.toString() ??
+        message.notification?.body ??
+        'Emergency SOS';
+    final reporter = message.data['reporter_name']?.toString() ?? 'A resident';
+    _triggerSirenAlert(title, reporter, alertId: reportId);
+    _onNewEmergency?.call();
+  }
+
+  void _disposeRemotePushListeners() {
+    _foregroundMessageSubscription?.cancel();
+    _openedMessageSubscription?.cancel();
+    _tokenRefreshSubscription?.cancel();
+    _foregroundMessageSubscription = null;
+    _openedMessageSubscription = null;
+    _tokenRefreshSubscription = null;
+    _remotePushInitialized = false;
+  }
+
+  void startListeningForEmergencies(VoidCallback onNewEmergency) {
+    _onNewEmergency = onNewEmergency;
+    _ensureEmergencySubscription();
+  }
+
+  void _ensureEmergencySubscription() {
+    if (!_isAdminSessionActive || _reportsSubscription != null) return;
     _reportsSubscription = _supabase
         .channel('public:reports')
         .onPostgresChanges(
@@ -64,8 +171,9 @@ class AdminProvider extends ChangeNotifier {
               _triggerSirenAlert(
                 newReport['title'] ?? 'Emergency SOS',
                 newReport['profiles']?['full_name'] ?? 'A resident',
+                alertId: newReport['id']?.toString(),
               );
-              onNewEmergency();
+              _onNewEmergency?.call();
             }
           },
         )
@@ -73,11 +181,40 @@ class AdminProvider extends ChangeNotifier {
   }
 
   void stopListeningForEmergencies() {
+    _onNewEmergency = null;
+    if (!_isAdminSessionActive) {
+      _cancelEmergencySubscription();
+    }
+  }
+
+  void _cancelEmergencySubscription() {
     _reportsSubscription?.unsubscribe();
     _reportsSubscription = null;
   }
 
-  Future<void> _triggerSirenAlert(String title, String reporterName) async {
+  @override
+  void dispose() {
+    _cancelEmergencySubscription();
+    _disposeRemotePushListeners();
+    _audioPlayer.dispose();
+    super.dispose();
+  }
+
+  Future<void> _triggerSirenAlert(
+    String title,
+    String reporterName, {
+    String? alertId,
+  }) async {
+    if (alertId != null) {
+      final now = DateTime.now();
+      _recentAlertIds.removeWhere(
+        (_, timestamp) =>
+            now.difference(timestamp) > const Duration(minutes: 2),
+      );
+      if (_recentAlertIds.containsKey(alertId)) return;
+      _recentAlertIds[alertId] = now;
+    }
+
     // 1. Play siren sound using audioplayers
     try {
       await _audioPlayer.stop();
@@ -86,12 +223,13 @@ class AdminProvider extends ChangeNotifier {
 
     // 2. Show heads-up notification
     final androidDetails = AndroidNotificationDetails(
-      'emergency_sos_v3',
+      'emergency_sos_v4',
       'SOS Emergency Alerts',
       channelDescription: 'Critical alerts for incoming SOS emergencies',
       importance: Importance.max,
       priority: Priority.max,
       playSound: true,
+      sound: const RawResourceAndroidNotificationSound('siren'),
       enableVibration: true,
       fullScreenIntent: true,
       category: AndroidNotificationCategory.alarm,
@@ -101,7 +239,9 @@ class AdminProvider extends ChangeNotifier {
     final details = NotificationDetails(android: androidDetails);
 
     await _notificationsPlugin.show(
-      id: 0,
+      id:
+          alertId?.hashCode ??
+          DateTime.now().millisecondsSinceEpoch.remainder(1 << 31),
       title: '🚨 CRITICAL SOS ALERT',
       body: '$reporterName has reported an emergency: $title',
       notificationDetails: details,

@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+
 import 'theme/app_theme.dart';
 import 'screens/resident_dashboard.dart';
 import 'screens/emergency_sos_screen.dart';
@@ -10,20 +13,32 @@ import 'screens/admin_announcements_screen.dart';
 import 'screens/audit_log_screen.dart';
 
 import 'package:provider/provider.dart';
+
 import 'providers/auth_provider.dart';
 import 'providers/report_provider.dart';
 import 'providers/admin_provider.dart';
 import 'screens/login_screen.dart';
 import 'screens/profile_screen.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'package:supabase_flutter/supabase_flutter.dart' hide AuthState;
+
 import 'env.dart';
+import 'firebase_options.dart';
+
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
   await Supabase.initialize(
     url: Env.supabaseUrl,
-    anonKey: Env.supabaseAnonKey,
+    publishableKey: Env.supabaseAnonKey,
   );
 
   runApp(
@@ -31,7 +46,17 @@ void main() async {
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => ReportProvider()),
-        ChangeNotifierProvider(create: (_) => AdminProvider()),
+        ChangeNotifierProxyProvider<AuthProvider, AdminProvider>(
+          create: (_) => AdminProvider(),
+          update: (_, auth, admin) {
+            final provider = admin ?? AdminProvider();
+            provider.setAdminSessionActive(
+              auth.state == AuthState.authenticated &&
+                  auth.role == UserRole.admin,
+            );
+            return provider;
+          },
+        ),
       ],
       child: const HelpHubApp(),
     ),

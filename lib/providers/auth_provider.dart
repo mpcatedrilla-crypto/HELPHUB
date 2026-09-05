@@ -1,12 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-enum AuthState { initial, loading, authenticated, error, denied, sessionExpired }
+enum AuthState {
+  initial,
+  loading,
+  authenticated,
+  error,
+  denied,
+  sessionExpired,
+}
+
 enum UserRole { guest, resident, admin }
 
 class AuthProvider extends ChangeNotifier {
   final _supabase = Supabase.instance.client;
-  
+
   AuthState _state = AuthState.initial;
   UserRole _role = UserRole.guest;
   String? _errorMessage;
@@ -24,7 +33,7 @@ class AuthProvider extends ChangeNotifier {
         email: email,
         password: password,
       );
-      
+
       final user = res.user;
       if (user != null) {
         // Fetch role from profiles table
@@ -33,7 +42,7 @@ class AuthProvider extends ChangeNotifier {
             .select()
             .eq('id', user.id)
             .single();
-            
+
         if (profile['status'] != 'approved') {
           _errorMessage = 'Account is pending verification or rejected.';
           await _supabase.auth.signOut();
@@ -46,7 +55,7 @@ class AuthProvider extends ChangeNotifier {
         } else {
           _role = UserRole.resident;
         }
-        
+
         _userName = profile['full_name'] ?? email;
         _setState(AuthState.authenticated);
       }
@@ -54,29 +63,40 @@ class AuthProvider extends ChangeNotifier {
       _errorMessage = e.message;
       _setState(AuthState.error);
     } catch (e) {
-      _errorMessage = 'Database connection failure. Have you run the SQL script?';
+      _errorMessage =
+          'Database connection failure. Have you run the SQL script?';
       _setState(AuthState.error);
     }
   }
 
-  Future<bool> register(String emailOrPhoneEmail, String password, String fullName, String phone, String address) async {
+  Future<bool> register(
+    String emailOrPhoneEmail,
+    String password,
+    String fullName,
+    String phone,
+    String address,
+  ) async {
     _setState(AuthState.loading);
     try {
       final AuthResponse res = await _supabase.auth.signUp(
         email: emailOrPhoneEmail,
         password: password,
       );
-      
+
       if (res.user != null) {
         // Update profile
-        await _supabase.from('profiles').update({
-          'full_name': fullName,
-          'phone': phone.isEmpty ? null : phone,
-          'address': address.isEmpty ? null : address,
-          'status': 'pending'
-        }).eq('id', res.user!.id);
-        
-        _errorMessage = 'Registration successful! Wait for admin approval to log in.';
+        await _supabase
+            .from('profiles')
+            .update({
+              'full_name': fullName,
+              'phone': phone.isEmpty ? null : phone,
+              'address': address.isEmpty ? null : address,
+              'status': 'pending',
+            })
+            .eq('id', res.user!.id);
+
+        _errorMessage =
+            'Registration successful! Wait for admin approval to log in.';
         _setState(AuthState.error); // Show message on login screen
         return true;
       }
@@ -93,6 +113,16 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<void> logout() async {
+    // Remove this device while the authenticated RLS context still exists.
+    // This prevents signed-out admins from continuing to receive SOS alerts.
+    try {
+      final token = await FirebaseMessaging.instance.getToken();
+      if (token != null) {
+        await _supabase.from('admin_push_tokens').delete().eq('token', token);
+      }
+    } catch (error) {
+      debugPrint('Unable to unregister push token during logout: $error');
+    }
     await _supabase.auth.signOut();
     _role = UserRole.guest;
     _userName = null;

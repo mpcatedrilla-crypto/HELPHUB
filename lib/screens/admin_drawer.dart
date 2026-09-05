@@ -159,8 +159,12 @@ class AdminDrawer extends StatelessWidget {
               icon: Icons.logout_rounded,
               label: 'Sign out',
               destructive: true,
-              onTap: () {
-                Provider.of<AuthProvider>(context, listen: false).logout();
+              onTap: () async {
+                await Provider.of<AuthProvider>(
+                  context,
+                  listen: false,
+                ).logout();
+                if (!context.mounted) return;
                 Navigator.pushReplacementNamed(context, '/');
               },
             ),
