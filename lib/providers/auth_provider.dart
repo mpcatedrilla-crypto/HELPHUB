@@ -70,18 +70,48 @@ class AuthProvider extends ChangeNotifier {
   }
 
   Future<bool> register(
-    String emailOrPhoneEmail,
+    String email,
     String password,
     String fullName,
     String phone,
-    String address,
-  ) async {
+    String address, {
+    String? firstName,
+    String? middleName,
+    String? lastName,
+    int? age,
+    DateTime? birthday,
+  }) async {
     _setState(AuthState.loading);
     try {
-      final AuthResponse res = await _supabase.auth.signUp(
-        email: emailOrPhoneEmail,
-        password: password,
-      );
+      final metadata =
+          <String, dynamic>{
+            'full_name': fullName,
+            'first_name': firstName,
+            'middle_name': middleName,
+            'last_name': lastName,
+            'age': age,
+            'birthday': birthday?.toIso8601String().split('T').first,
+            'phone': phone,
+            'address': address,
+          }..removeWhere(
+            (key, value) => value == null || (value is String && value.isEmpty),
+          );
+
+      final trimmedEmail = email.trim();
+      final AuthResponse res;
+      if (trimmedEmail.isNotEmpty) {
+        res = await _supabase.auth.signUp(
+          email: trimmedEmail,
+          password: password,
+          data: metadata,
+        );
+      } else {
+        res = await _supabase.auth.signUp(
+          phone: _normalizePhilippinePhone(phone),
+          password: password,
+          data: metadata,
+        );
+      }
 
       if (res.user != null) {
         // Update profile
@@ -110,6 +140,16 @@ class AuthProvider extends ChangeNotifier {
       _setState(AuthState.error);
       return false;
     }
+  }
+
+  String _normalizePhilippinePhone(String value) {
+    final trimmed = value.trim();
+    final digits = trimmed.replaceAll(RegExp(r'\D'), '');
+    if (trimmed.startsWith('+')) return '+$digits';
+    if (digits.startsWith('09')) return '+63${digits.substring(1)}';
+    if (digits.startsWith('9')) return '+63$digits';
+    if (digits.startsWith('63')) return '+$digits';
+    return '+$digits';
   }
 
   Future<void> logout() async {

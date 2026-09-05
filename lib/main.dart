@@ -17,7 +17,8 @@ import 'package:provider/provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/report_provider.dart';
 import 'providers/admin_provider.dart';
-import 'screens/login_screen.dart';
+import 'screens/modern_login_screen.dart';
+import 'screens/landing_screen.dart';
 import 'screens/profile_screen.dart';
 
 import 'package:supabase_flutter/supabase_flutter.dart' hide AuthState;
@@ -74,7 +75,8 @@ class HelpHubApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       initialRoute: '/',
       routes: {
-        '/': (context) => const LoginScreen(),
+        '/': (context) => const LandingScreen(),
+        '/login': (context) => const ModernLoginScreen(),
         '/resident_home': (context) => const ResidentDashboard(),
         '/emergency_sos': (context) => const EmergencySOSScreen(),
         '/report_concern': (context) => const ConcernReportingForm(),
