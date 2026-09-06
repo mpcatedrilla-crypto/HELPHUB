@@ -14,6 +14,33 @@ class ReportProvider extends ChangeNotifier {
   List<Map<String, dynamic>> _concernTypes = [];
   String? _lastSubmittedReportId;
 
+  RealtimeChannel? _reportsSubscription;
+
+  ReportProvider() {
+    _initializeRealtime();
+  }
+
+  void _initializeRealtime() {
+    _reportsSubscription = _supabase
+        .channel('reports_sync')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'reports',
+          callback: (payload) {
+            fetchAllReports();
+            fetchMyReports();
+          },
+        )
+        .subscribe();
+  }
+
+  @override
+  void dispose() {
+    _reportsSubscription?.unsubscribe();
+    super.dispose();
+  }
+
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
   List<Map<String, dynamic>> get myReports => _myReports;

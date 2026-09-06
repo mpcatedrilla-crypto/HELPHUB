@@ -109,12 +109,15 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: const Color(0xFF0A1128),
       appBar: AppBar(
+        backgroundColor: const Color(0xFF0A1128),
+        elevation: 0,
         toolbarHeight: 68,
         title: const Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Priority queue'),
+            Text('Priority queue', style: TextStyle(color: Colors.white)),
             SizedBox(height: 2),
             Text(
               'Community response command',
@@ -155,11 +158,11 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
             return const _QueueSkeleton();
           }
 
-          final allReports = provider.allReports;
-          final emergencyReports = allReports
+          final rawAllReports = provider.allReports;
+          final emergencyReports = rawAllReports
               .where((r) => r['is_critical_override'] == true)
               .toList();
-          final activeReports = allReports
+          final activeReports = rawAllReports
               .where(
                 (r) => ![
                   'resolved',
@@ -169,13 +172,24 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
                 ].contains(r['status']),
               )
               .toList();
-          final resolvedReports = allReports
+          final resolvedReports = rawAllReports
               .where(
                 (r) => [
                   'resolved',
                   'closed',
                   'archived',
                   'referred',
+                  'false_alarm',
+                ].contains(r['status']),
+              )
+              .toList();
+          
+          final allReports = rawAllReports
+              .where(
+                (r) => ![
+                  'resolved',
+                  'closed',
+                  'archived',
                   'false_alarm',
                 ].contains(r['status']),
               )
@@ -275,6 +289,7 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
                       priorityLabel: badge['label'],
                       currentStatus: r['status'] ?? 'submitted',
                       isEmergency: r['is_critical_override'] == true,
+                      adminProofUrl: r['admin_proof_url'],
                     )
                     .animate()
                     .fadeIn(
@@ -667,6 +682,7 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
     String priorityLabel = '',
     String currentStatus = 'submitted',
     bool isEmergency = false,
+    String? adminProofUrl,
   }) {
     String assignedTo = "Unassigned";
     if (currentDestinationId != null) {
@@ -680,7 +696,6 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
     final statusColor = switch (currentStatus) {
       'acknowledged' => AppTheme.primaryBlue,
       'in_progress' => AppTheme.statusProgress,
-      'responding' => AppTheme.statusCritical,
       'resolved' => AppTheme.statusLow,
       'referred' => AppTheme.statusReferred,
       'false_alarm' => AppTheme.statusHigh,
@@ -688,10 +703,8 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
       _ => AppTheme.textSecondary,
     };
 
-    // Build context-aware next-status actions based on workflow
     List<Map<String, dynamic>> nextActions = [];
     if (isEmergency) {
-      // Emergency workflow: submitted → acknowledged → responding → resolved|referred|false_alarm → closed
       if (currentStatus == 'submitted') {
         nextActions = [
           {
@@ -706,11 +719,11 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
           {
             'label': 'Mark Responding',
             'icon': Icons.directions_run,
-            'status': 'responding',
+            'status': 'in_progress',
             'color': AppTheme.statusCritical,
           },
         ];
-      } else if (currentStatus == 'responding') {
+      } else if (currentStatus == 'in_progress') {
         nextActions = [
           {
             'label': 'Mark Resolved',
@@ -747,7 +760,6 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
         ];
       }
     } else {
-      // Normal workflow: submitted → acknowledged → in_progress → resolved → closed → archived
       if (currentStatus == 'submitted') {
         nextActions = [
           {
@@ -799,492 +811,346 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
-      clipBehavior: Clip.antiAlias,
-      elevation: isEmergency ? 3 : 1,
-      shadowColor: (isEmergency ? AppTheme.statusCritical : AppTheme.navy)
-          .withValues(alpha: isEmergency ? 0.16 : 0.08),
+      color: Colors.white,
+      elevation: 0,
       shape: RoundedRectangleBorder(
-        side: BorderSide(
-          color: isEmergency
-              ? AppTheme.statusCritical.withValues(alpha: 0.35)
-              : AppTheme.outline,
-        ),
-        borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
+        borderRadius: BorderRadius.circular(12),
       ),
-      child: IntrinsicHeight(
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(width: 5, color: badgeColor),
-            Expanded(
-              child: Column(
-                children: [
-                  ListTile(
-                    contentPadding: const EdgeInsets.fromLTRB(15, 12, 14, 8),
-                    leading: Container(
-                      width: 56,
-                      height: 58,
-                      decoration: BoxDecoration(
-                        color: badgeColor.withValues(alpha: 0.09),
-                        borderRadius: BorderRadius.circular(15),
-                        border: Border.all(
-                          color: badgeColor.withValues(alpha: 0.18),
-                        ),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    _StatusPill(
+                      label: badgeText,
+                      color: badgeColor,
+                      icon: isEmergency ? Icons.emergency_rounded : Icons.flag_rounded,
+                      filled: true,
+                    ),
+                    const SizedBox(width: 8),
+                    _StatusPill(
+                      label: statusLabel,
+                      color: statusColor,
+                      icon: Icons.sync_rounded,
+                    ),
+                  ],
+                ),
+                Icon(Icons.more_horiz_rounded, color: Colors.grey.shade400, size: 20),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Text(
+              title,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black87),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(Icons.location_on, color: Colors.grey.shade500, size: 14),
+                const SizedBox(width: 4),
+                Text(
+                  assignedTo == 'Unassigned' ? 'Awaiting dispatcher' : assignedTo,
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                ),
+                const SizedBox(width: 16),
+                Icon(Icons.access_time, color: Colors.grey.shade500, size: 14),
+                const SizedBox(width: 4),
+                Text(
+                  'Reported: $date',
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                ),
+              ],
+            ),
+            if ((evidence != null && evidence.isNotEmpty) || adminProofUrl != null) ...[
+               const SizedBox(height: 16),
+               const Text('Evidence & Proof', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
+               const SizedBox(height: 8),
+               SizedBox(
+                 height: 70,
+                 child: ListView(
+                   scrollDirection: Axis.horizontal,
+                   children: [
+                     if (evidence != null && evidence.isNotEmpty)
+                       ...evidence.map((e) {
+                         final storagePath = e['storage_path'];
+                         final url = provider.getEvidenceUrl(storagePath);
+                         return _buildThumbnail(url, false);
+                       }).toList(),
+                     if (adminProofUrl != null)
+                       _buildThumbnail(adminProofUrl, true),
+                   ],
+                 )
+               )
+            ],
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                if (nextActions.isNotEmpty)
+                  Expanded(
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: nextActions.first['color'] ?? AppTheme.primaryBlue,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                       ),
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text(
-                            score,
-                            style: TextStyle(
-                              color: badgeColor,
-                              fontWeight: FontWeight.w800,
-                              fontSize: 20,
-                              height: 1,
-                            ),
-                          ),
-                          const SizedBox(height: 3),
-                          Text(
-                            'SCORE',
-                            style: TextStyle(
-                              color: badgeColor,
-                              fontSize: 9,
-                              fontWeight: FontWeight.w700,
-                              letterSpacing: 0.7,
-                            ),
-                          ),
-                        ],
-                      ),
+                      onPressed: () async {
+                         final action = nextActions.first;
+                         if (action['requiresDialog'] == true) {
+                            _showResolveDialog(context, provider, reportId);
+                         } else {
+                            final success = await provider.updateReportStatus(reportId, action['status']);
+                            if (context.mounted) {
+                               ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                                   content: Text(success ? 'Status updated to "${action['label']}"' : (provider.errorMessage ?? 'Update failed')),
+                                   backgroundColor: success ? Colors.green : Colors.red,
+                               ));
+                            }
+                         }
+                      },
+                      child: Text(nextActions.first['label']),
                     ),
-                    title: Padding(
-                      padding: const EdgeInsets.only(bottom: 3),
-                      child: Text(
-                        title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
+                  ),
+                if (nextActions.isNotEmpty) const SizedBox(width: 8),
+                Expanded(
+                  child: OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: Colors.grey.shade700,
+                      side: BorderSide(color: Colors.grey.shade300),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                     ),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          subtitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: AppTheme.textSecondary,
-                          ),
-                        ),
-                        const SizedBox(height: 9),
-                        Wrap(
-                          spacing: 7,
-                          runSpacing: 6,
-                          children: [
-                            _StatusPill(
-                              label: badgeText,
-                              color: badgeColor,
-                              icon: isEmergency
-                                  ? Icons.emergency_rounded
-                                  : Icons.flag_rounded,
-                              filled: true,
-                            ),
-                            _StatusPill(
-                              label: statusLabel,
-                              color: statusColor,
-                              icon: Icons.sync_rounded,
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 9),
-                        Row(
-                          children: [
-                            const Icon(
-                              Icons.groups_2_rounded,
-                              size: 15,
-                              color: AppTheme.textSecondary,
-                            ),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Text(
-                                assignedTo == 'Unassigned'
-                                    ? 'Awaiting dispatcher'
-                                    : assignedTo,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: AppTheme.primaryBlue,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        if (location != null) ...[
-                          const SizedBox(height: 8),
-                          InkWell(
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => _FullScreenMapViewer(
-                                    lat: location["latitude"],
-                                    lng: location["longitude"],
-                                  ),
-                                ),
-                              );
-                            },
-                            child: Row(
-                              children: [
-                                const Icon(
-                                  Icons.location_on_rounded,
-                                  color: AppTheme.primaryBlue,
-                                  size: 15,
-                                ),
-                                const SizedBox(width: 5),
-                                const Text(
-                                  'Open pinned location',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: AppTheme.primaryBlue,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                                const SizedBox(width: 2),
-                                const Icon(
-                                  Icons.arrow_outward_rounded,
-                                  color: AppTheme.primaryBlue,
-                                  size: 13,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                    trailing: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text(
-                          date,
-                          style: const TextStyle(
-                            color: AppTheme.textSecondary,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        const Icon(
-                          Icons.more_horiz_rounded,
-                          color: AppTheme.textSecondary,
-                          size: 20,
-                        ),
-                      ],
-                    ),
-                    onTap: () {
-                      showModalBottomSheet(
-                        context: context,
-                        isScrollControlled: true,
-                        useSafeArea: true,
-                        builder: (ctx) => ConstrainedBox(
-                          constraints: BoxConstraints(
-                            maxHeight: MediaQuery.sizeOf(ctx).height * 0.82,
-                          ),
-                          child: SingleChildScrollView(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Padding(
-                                  padding: const EdgeInsets.fromLTRB(
-                                    20,
-                                    4,
-                                    20,
-                                    18,
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Container(
-                                            width: 42,
-                                            height: 42,
-                                            decoration: BoxDecoration(
-                                              color: badgeColor.withValues(
-                                                alpha: 0.1,
-                                              ),
-                                              borderRadius:
-                                                  BorderRadius.circular(12),
-                                            ),
-                                            child: Icon(
-                                              isEmergency
-                                                  ? Icons.emergency_rounded
-                                                  : Icons.assignment_rounded,
-                                              color: badgeColor,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 12),
-                                          Expanded(
-                                            child: Text(
-                                              title,
-                                              style: Theme.of(ctx)
-                                                  .textTheme
-                                                  .titleLarge,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 12),
-                                      Wrap(
-                                        spacing: 8,
-                                        runSpacing: 8,
-                                        children: [
-                                          _StatusPill(
-                                            label: badgeText,
-                                            color: badgeColor,
-                                            icon: Icons.flag_rounded,
-                                            filled: true,
-                                          ),
-                                          _StatusPill(
-                                            label: statusLabel,
-                                            color: statusColor,
-                                            icon: Icons.sync_rounded,
-                                          ),
-                                        ],
-                                      ),
-                                      const SizedBox(height: 10),
-                                      Text(
-                                        priorityLabel,
-                                        style: Theme.of(ctx)
-                                            .textTheme
-                                            .bodyMedium,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                // Workflow Status Actions
-                                if (nextActions.isNotEmpty) ...[
-                                  const Divider(),
-                                  const _SheetSectionLabel('NEXT ACTION'),
-                                  ...nextActions.map(
-                                    (action) => Padding(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                        vertical: 3,
-                                      ),
-                                      child: ListTile(
-                                        tileColor: (action['color'] as Color)
-                                            .withValues(alpha: 0.07),
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius: BorderRadius.circular(
-                                            14,
-                                          ),
-                                        ),
-                                        leading: Container(
-                                          width: 38,
-                                          height: 38,
-                                          decoration: BoxDecoration(
-                                            color: (action['color'] as Color)
-                                                .withValues(alpha: 0.12),
-                                            borderRadius: BorderRadius.circular(
-                                              10,
-                                            ),
-                                          ),
-                                          child: Icon(
-                                            action['icon'],
-                                            color: action['color'],
-                                            size: 20,
-                                          ),
-                                        ),
-                                        title: Text(
-                                          action['label'],
-                                          style: const TextStyle(
-                                            color: AppTheme.onSurfaceColor,
-                                            fontWeight: FontWeight.w600,
-                                          ),
-                                        ),
-                                        trailing: Icon(
-                                          Icons.arrow_forward_rounded,
-                                          color: action['color'],
-                                          size: 19,
-                                        ),
-                                        onTap: () async {
-                                          Navigator.pop(ctx);
-                                          if (action['requiresDialog'] ==
-                                              true) {
-                                            _showResolveDialog(
-                                              context,
-                                              provider,
-                                              reportId,
-                                            );
-                                          } else {
-                                            final success = await provider
-                                                .updateReportStatus(
-                                                  reportId,
-                                                  action['status'],
-                                                );
-                                            if (context.mounted) {
-                                              ScaffoldMessenger.of(
-                                                context,
-                                              ).showSnackBar(
-                                                SnackBar(
-                                                  content: Text(
-                                                    success
-                                                        ? 'Status updated to "${action['label']}"'
-                                                        : (provider
-                                                                  .errorMessage ??
-                                                              'Update failed'),
-                                                  ),
-                                                  backgroundColor: success
-                                                      ? Colors.green
-                                                      : Colors.red,
-                                                ),
-                                              );
-                                            }
-                                          }
-                                        },
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                                const Padding(
-                                  padding: EdgeInsets.symmetric(vertical: 14),
-                                  child: Divider(),
-                                ),
-                                const _SheetSectionLabel('DISPATCH TEAM'),
-                                ...adminProvider.routingDestinations.map(
-                                  (dest) => ListTile(
-                                    contentPadding: const EdgeInsets.symmetric(
-                                      horizontal: 20,
-                                    ),
-                                    leading: Container(
-                                      width: 38,
-                                      height: 38,
-                                      decoration: BoxDecoration(
-                                        color: AppTheme.surfaceMuted,
-                                        borderRadius: BorderRadius.circular(10),
-                                      ),
-                                      child: const Icon(
-                                        Icons.local_shipping_rounded,
-                                        color: AppTheme.primaryBlue,
-                                        size: 20,
-                                      ),
-                                    ),
-                                    title: Text(dest['destination_name']),
-                                    trailing: currentDestinationId == dest['id']
-                                        ? const Icon(
-                                            Icons.check,
-                                            color: AppTheme.primaryBlue,
-                                          )
-                                        : null,
-                                    onTap: () {
-                                      adminProvider.assignReportDestination(
-                                        reportId,
-                                        dest['id'],
-                                      );
-                                      Navigator.pop(ctx);
-                                    },
-                                  ),
-                                ),
-                                const SizedBox(height: 16),
-                              ],
-                            ),
-                          ),
-                        ),
+                    onPressed: () {
+                      _openDetailsSheet(
+                        context, title, badgeText, badgeColor, statusLabel, statusColor,
+                        priorityLabel, isEmergency, nextActions, provider, reportId, adminProvider, currentDestinationId
                       );
                     },
+                    child: const Text('View Details'),
                   ),
-                  if (evidence != null && evidence.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(
-                        left: 12,
-                        right: 12,
-                        bottom: 12,
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Evidence Photos',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.grey,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          SizedBox(
-                            height: 90,
-                            child: ListView.builder(
-                              scrollDirection: Axis.horizontal,
-                              itemCount: evidence.length,
-                              itemBuilder: (context, index) {
-                                final storagePath =
-                                    evidence[index]['storage_path'];
-                                final url = provider.getEvidenceUrl(
-                                  storagePath,
-                                );
-                                return GestureDetector(
-                                  onTap: () {
-                                    Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                        builder: (_) =>
-                                            _FullScreenImageViewer(url: url),
-                                      ),
-                                    );
-                                  },
-                                  child: Stack(
-                                    children: [
-                                      Container(
-                                        margin: const EdgeInsets.only(right: 8),
-                                        width: 90,
-                                        height: 90,
-                                        decoration: BoxDecoration(
-                                          borderRadius: BorderRadius.circular(
-                                            10,
-                                          ),
-                                          image: DecorationImage(
-                                            image: NetworkImage(url),
-                                            fit: BoxFit.cover,
-                                          ),
-                                        ),
-                                      ),
-                                      Positioned(
-                                        bottom: 4,
-                                        right: 12,
-                                        child: Container(
-                                          padding: const EdgeInsets.all(2),
-                                          decoration: BoxDecoration(
-                                            color: Colors.black54,
-                                            borderRadius: BorderRadius.circular(
-                                              4,
-                                            ),
-                                          ),
-                                          child: const Icon(
-                                            Icons.fullscreen,
-                                            color: Colors.white,
-                                            size: 16,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                ],
-              ),
+                ),
+              ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildThumbnail(String url, bool isProof) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(context, MaterialPageRoute(builder: (_) => _FullScreenImageViewer(url: url)));
+      },
+      child: Container(
+        margin: const EdgeInsets.only(right: 8),
+        width: 70,
+        height: 70,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(8),
+          image: DecorationImage(image: NetworkImage(url), fit: BoxFit.cover),
+        ),
+        child: isProof
+            ? Align(
+                alignment: Alignment.bottomCenter,
+                child: Container(
+                  width: double.infinity,
+                  color: Colors.black54,
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: const Text('Resolution Proof', style: TextStyle(color: Colors.white, fontSize: 8), textAlign: TextAlign.center),
+                ),
+              )
+            : null,
+      ),
+    );
+  }
+
+  void _openDetailsSheet(
+    BuildContext context, String title, String badgeText, Color badgeColor,
+    String statusLabel, Color statusColor, String priorityLabel, bool isEmergency,
+    List<Map<String, dynamic>> nextActions, ReportProvider provider, String reportId,
+    AdminProvider adminProvider, String? currentDestinationId
+  ) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (ctx) => ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(ctx).height * 0.82,
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 4, 20, 18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 42,
+                          height: 42,
+                          decoration: BoxDecoration(
+                            color: badgeColor.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Icon(
+                            isEmergency ? Icons.emergency_rounded : Icons.assignment_rounded,
+                            color: badgeColor,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            title,
+                            style: Theme.of(ctx).textTheme.titleLarge,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _StatusPill(
+                          label: badgeText,
+                          color: badgeColor,
+                          icon: Icons.flag_rounded,
+                          filled: true,
+                        ),
+                        _StatusPill(
+                          label: statusLabel,
+                          color: statusColor,
+                          icon: Icons.sync_rounded,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      priorityLabel,
+                      style: Theme.of(ctx).textTheme.bodyMedium,
+                    ),
+                  ],
+                ),
+              ),
+              if (nextActions.isNotEmpty) ...[
+                const Divider(),
+                const _SheetSectionLabel('NEXT ACTION'),
+                ...nextActions.map(
+                  (action) => Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+                    child: ListTile(
+                      tileColor: (action['color'] as Color).withValues(alpha: 0.07),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      leading: Container(
+                        width: 38,
+                        height: 38,
+                        decoration: BoxDecoration(
+                          color: (action['color'] as Color).withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          action['icon'],
+                          color: action['color'],
+                          size: 20,
+                        ),
+                      ),
+                      title: Text(
+                        action['label'],
+                        style: const TextStyle(
+                          color: AppTheme.onSurfaceColor,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      trailing: Icon(
+                        Icons.arrow_forward_rounded,
+                        color: action['color'],
+                        size: 19,
+                      ),
+                      onTap: () async {
+                        Navigator.pop(ctx);
+                        if (action['requiresDialog'] == true) {
+                          _showResolveDialog(context, provider, reportId);
+                        } else {
+                          final success = await provider.updateReportStatus(
+                            reportId,
+                            action['status'],
+                          );
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  success
+                                      ? 'Status updated to "${action['label']}"'
+                                      : (provider.errorMessage ?? 'Update failed'),
+                                ),
+                                backgroundColor: success ? Colors.green : Colors.red,
+                              ),
+                            );
+                          }
+                        }
+                      },
+                    ),
+                  ),
+                ),
+              ],
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 14),
+                child: Divider(),
+              ),
+              const _SheetSectionLabel('DISPATCH TEAM'),
+              ...adminProvider.routingDestinations.map(
+                (dest) => ListTile(
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+                  leading: Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: AppTheme.surfaceMuted,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(
+                      Icons.local_shipping_rounded,
+                      color: AppTheme.primaryBlue,
+                      size: 20,
+                    ),
+                  ),
+                  title: Text(dest['destination_name']),
+                  trailing: currentDestinationId == dest['id']
+                      ? const Icon(
+                          Icons.check,
+                          color: AppTheme.primaryBlue,
+                        )
+                      : null,
+                  onTap: () {
+                    adminProvider.assignReportDestination(
+                      reportId,
+                      dest['id'],
+                    );
+                    Navigator.pop(ctx);
+                  },
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+          ),
         ),
       ),
     );
@@ -1785,3 +1651,4 @@ class _FullScreenMapViewer extends StatelessWidget {
     );
   }
 }
+

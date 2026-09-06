@@ -75,9 +75,17 @@ class HelpHubApp extends StatelessWidget {
       title: 'HelpHub',
       theme: AppTheme.lightTheme,
       debugShowCheckedModeBanner: false,
-      initialRoute: '/',
+      home: Consumer<AuthProvider>(
+        builder: (context, auth, child) {
+          if (auth.state == AuthState.authenticated) {
+            return auth.role == UserRole.admin
+                ? const AdminPriorityQueue()
+                : const ModernResidentDashboard();
+          }
+          return const ModernLoginScreen();
+        },
+      ),
       routes: {
-        '/': (context) => const ModernLoginScreen(),
         '/login': (context) => const ModernLoginScreen(),
         '/resident_home': (context) => const ModernResidentDashboard(),
         '/emergency_sos': (context) => const ModernEmergencySos(),
