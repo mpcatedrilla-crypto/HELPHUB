@@ -43,8 +43,8 @@ class AuthProvider extends ChangeNotifier {
             .eq('id', user.id)
             .single();
 
-        if (profile['status'] != 'approved') {
-          _errorMessage = 'Account is pending verification or rejected.';
+        if (profile['status'] == 'rejected') {
+          _errorMessage = 'This account verification request was rejected.';
           await _supabase.auth.signOut();
           _setState(AuthState.denied);
           return;

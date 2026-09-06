@@ -3,7 +3,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 
 import 'theme/app_theme.dart';
-import 'screens/resident_dashboard.dart';
+import 'screens/modern_resident_dashboard.dart';
 import 'screens/emergency_sos_screen.dart';
 import 'screens/concern_reporting_form.dart';
 import 'screens/report_tracking.dart';
@@ -17,8 +17,8 @@ import 'package:provider/provider.dart';
 import 'providers/auth_provider.dart';
 import 'providers/report_provider.dart';
 import 'providers/admin_provider.dart';
+import 'providers/profile_provider.dart';
 import 'screens/modern_login_screen.dart';
-import 'screens/landing_screen.dart';
 import 'screens/profile_screen.dart';
 
 import 'package:supabase_flutter/supabase_flutter.dart' hide AuthState;
@@ -34,19 +34,21 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await Future.wait([
+    Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform),
+    Supabase.initialize(
+      url: Env.supabaseUrl,
+      publishableKey: Env.supabaseAnonKey,
+    ),
+  ]);
   FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
-
-  await Supabase.initialize(
-    url: Env.supabaseUrl,
-    publishableKey: Env.supabaseAnonKey,
-  );
 
   runApp(
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => ReportProvider()),
+        ChangeNotifierProvider(create: (_) => ProfileProvider()),
         ChangeNotifierProxyProvider<AuthProvider, AdminProvider>(
           create: (_) => AdminProvider(),
           update: (_, auth, admin) {
@@ -75,9 +77,9 @@ class HelpHubApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       initialRoute: '/',
       routes: {
-        '/': (context) => const LandingScreen(),
+        '/': (context) => const ModernLoginScreen(),
         '/login': (context) => const ModernLoginScreen(),
-        '/resident_home': (context) => const ResidentDashboard(),
+        '/resident_home': (context) => const ModernResidentDashboard(),
         '/emergency_sos': (context) => const EmergencySOSScreen(),
         '/report_concern': (context) => const ConcernReportingForm(),
         '/report_tracking': (context) => const ReportTracking(),

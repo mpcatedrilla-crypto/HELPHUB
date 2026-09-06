@@ -71,26 +71,41 @@ class _ModernLoginScreenState extends State<ModernLoginScreen> {
         builder: (context, auth, _) {
           return LayoutBuilder(
             builder: (context, constraints) {
-              return SingleChildScrollView(
-                keyboardDismissBehavior:
-                    ScrollViewKeyboardDismissBehavior.onDrag,
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                  child: IntrinsicHeight(
-                    child: CustomPaint(
-                      painter: const _GeometricLoginPainter(),
-                      child: Column(
-                        children: [
-                          const SizedBox(
-                            height: 170,
-                            child: SafeArea(
-                              bottom: false,
-                              child: Center(child: _CrestLogo()),
-                            ),
+              return Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(colors: [_cyan, _blue]),
+                ),
+                child: SingleChildScrollView(
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: constraints.maxHeight,
+                    ),
+                    child: Align(
+                      alignment: Alignment.topCenter,
+                      child: SizedBox(
+                        height: 640,
+                        child: CustomPaint(
+                          painter: const _GeometricLoginPainter(),
+                          child: Column(
+                            children: [
+                              const SizedBox(
+                                height: 170,
+                                child: SafeArea(
+                                  bottom: false,
+                                  child: Center(child: _CrestLogo()),
+                                ),
+                              ),
+                              Expanded(
+                                child: SingleChildScrollView(
+                                  child: _loginPanel(auth),
+                                ),
+                              ),
+                              const _SecureFooter(),
+                            ],
                           ),
-                          Expanded(child: _loginPanel(auth)),
-                          const _SecureFooter(),
-                        ],
+                        ),
                       ),
                     ),
                   ),
@@ -307,37 +322,14 @@ class _CrestLogo extends StatelessWidget {
     return Semantics(
       header: true,
       label: 'HelpHub',
-      child: SizedBox(
-        width: 125,
-        height: 125,
-        child: Stack(
-          alignment: Alignment.topCenter,
-          children: [
-            const Positioned(
-              top: 7,
-              child: Text(
-                'HelpHub',
-                style: TextStyle(
-                  color: Color(0xFFD0D0D0),
-                  fontSize: 21,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: .3,
-                  shadows: [
-                    Shadow(
-                      color: Color(0x66000000),
-                      blurRadius: 2,
-                      offset: Offset(1, 2),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const Positioned(
-              top: 28,
-              child: CustomPaint(size: Size(105, 94), painter: _CrestPainter()),
-            ),
-          ],
-        ),
+      child: Image.asset(
+        'assets/images/helphub_crest.png',
+        width: 122,
+        height: 128,
+        fit: BoxFit.contain,
+        filterQuality: FilterQuality.high,
+        errorBuilder: (context, error, stackTrace) =>
+            const CustomPaint(size: Size(105, 94), painter: _CrestPainter()),
       ),
     );
   }

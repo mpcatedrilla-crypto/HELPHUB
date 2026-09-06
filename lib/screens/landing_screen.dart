@@ -66,11 +66,22 @@ class _LandingScreenState extends State<LandingScreen>
           onTap: _openLogin,
           child: FadeTransition(
             opacity: _fadeAnimation,
-            child: SizedBox.expand(
-              child: Image.asset(
-                'assets/images/landing.png',
-                fit: BoxFit.cover,
-                filterQuality: FilterQuality.high,
+            child: Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.bottomLeft,
+                  end: Alignment.topRight,
+                  colors: [Color(0xFF43C9D7), Color(0xFF075EB8)],
+                ),
+              ),
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: Image.asset(
+                  'assets/images/landing.png',
+                  width: double.infinity,
+                  fit: BoxFit.fitWidth,
+                  filterQuality: FilterQuality.high,
+                ),
               ),
             ),
           ),
