@@ -29,6 +29,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _phone = TextEditingController();
   final _password = TextEditingController();
   final _confirmation = TextEditingController();
+  final _pageScrollController = ScrollController();
 
   int _step = 0;
   DateTime? _birthday;
@@ -51,6 +52,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     ]) {
       controller.dispose();
     }
+    _pageScrollController.dispose();
     super.dispose();
   }
 
@@ -124,14 +126,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
       },
       child: Scaffold(
         backgroundColor: _brand,
-        resizeToAvoidBottomInset: true,
+        resizeToAvoidBottomInset: false,
         body: Consumer<AuthProvider>(
           builder: (context, auth, _) {
             return LayoutBuilder(
               builder: (context, constraints) {
+                final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
                 return SingleChildScrollView(
+                  controller: _pageScrollController,
+                  primary: false,
                   keyboardDismissBehavior:
                       ScrollViewKeyboardDismissBehavior.onDrag,
+                  padding: EdgeInsets.only(bottom: keyboardInset),
                   child: ConstrainedBox(
                     constraints: BoxConstraints(
                       minHeight: constraints.maxHeight,
@@ -760,6 +766,7 @@ class _Field extends StatelessWidget {
           const SizedBox(height: 2),
           TextFormField(
             controller: controller,
+            scrollPadding: const EdgeInsets.only(bottom: 140),
             keyboardType: keyboard,
             textInputAction: action,
             autofillHints: autofillHints,

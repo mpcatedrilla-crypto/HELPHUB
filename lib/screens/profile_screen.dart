@@ -32,6 +32,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   final _email = TextEditingController();
   final _phone = TextEditingController();
   final _picker = ImagePicker();
+  final _pageScrollController = ScrollController();
 
   bool _editing = false;
   File? _selectedAvatar;
@@ -77,6 +78,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     ]) {
       controller.dispose();
     }
+    _pageScrollController.dispose();
     super.dispose();
   }
 
@@ -166,46 +168,52 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _blue,
+      resizeToAvoidBottomInset: false,
       body: Consumer<ProfileProvider>(
         builder: (context, profile, _) {
           return LayoutBuilder(
             builder: (context, constraints) {
+              final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+              final designHeight = constraints.maxHeight < 640
+                  ? 640.0
+                  : constraints.maxHeight;
+              final canvas = SizedBox(
+                height: designHeight,
+                child: CustomPaint(
+                  painter: const _ProfileBackgroundPainter(),
+                  child: Column(
+                    children: [
+                      _ProfileHeader(
+                        profile: profile,
+                        editing: _editing,
+                        selectedAvatar: _selectedAvatar,
+                        onBack: () => Navigator.pop(context),
+                        onLogout: _logout,
+                        onEdit: () => setState(() => _editing = true),
+                        onAvatarTap: _pickAvatar,
+                      ),
+                      Expanded(
+                        child: _profileForm(
+                          profile,
+                          spreadFields: designHeight > 680,
+                        ),
+                      ),
+                      const SizedBox(height: 114),
+                    ],
+                  ),
+                ),
+              );
               return Container(
                 decoration: const BoxDecoration(
                   gradient: LinearGradient(colors: [_cyan, _blue]),
                 ),
                 child: SingleChildScrollView(
+                  controller: _pageScrollController,
+                  primary: false,
                   keyboardDismissBehavior:
                       ScrollViewKeyboardDismissBehavior.onDrag,
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      minHeight: constraints.maxHeight,
-                    ),
-                    child: Align(
-                      alignment: Alignment.topCenter,
-                      child: SizedBox(
-                        height: 640,
-                        child: CustomPaint(
-                          painter: const _ProfileBackgroundPainter(),
-                          child: Column(
-                            children: [
-                              _ProfileHeader(
-                                profile: profile,
-                                editing: _editing,
-                                selectedAvatar: _selectedAvatar,
-                                onBack: () => Navigator.pop(context),
-                                onLogout: _logout,
-                                onEdit: () => setState(() => _editing = true),
-                                onAvatarTap: _pickAvatar,
-                              ),
-                              Expanded(child: _profileForm(profile)),
-                              const SizedBox(height: 114),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
+                  padding: EdgeInsets.only(bottom: keyboardInset),
+                  child: canvas,
                 ),
               );
             },
@@ -215,7 +223,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _profileForm(ProfileProvider profile) {
+  Widget _profileForm(ProfileProvider profile, {required bool spreadFields}) {
     if (profile.isLoading && profile.profile.isEmpty) {
       return const Center(child: CircularProgressIndicator(color: _purple));
     }
@@ -224,6 +232,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
       child: Padding(
         padding: const EdgeInsets.fromLTRB(43, 10, 43, 24),
         child: Column(
+          mainAxisAlignment: spreadFields
+              ? MainAxisAlignment.spaceEvenly
+              : MainAxisAlignment.start,
           children: [
             Row(
               children: [
@@ -301,6 +312,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       padding: const EdgeInsets.only(bottom: 8),
       child: TextFormField(
         controller: controller,
+        scrollPadding: const EdgeInsets.only(bottom: 140),
         readOnly: !_editing || readOnly || onTap != null,
         onTap: onTap,
         keyboardType: number

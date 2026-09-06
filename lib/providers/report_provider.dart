@@ -12,12 +12,14 @@ class ReportProvider extends ChangeNotifier {
   List<Map<String, dynamic>> _myReports = [];
   List<Map<String, dynamic>> _allReports = [];
   List<Map<String, dynamic>> _concernTypes = [];
+  String? _lastSubmittedReportId;
 
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
   List<Map<String, dynamic>> get myReports => _myReports;
   List<Map<String, dynamic>> get allReports => _allReports;
   List<Map<String, dynamic>> get concernTypes => _concernTypes;
+  String? get lastSubmittedReportId => _lastSubmittedReportId;
 
   // Derived metrics for Dashboard
   int get activeReportsCount =>
@@ -99,6 +101,7 @@ class ReportProvider extends ChangeNotifier {
     List<File>? evidenceImages,
   }) async {
     _setLoading(true);
+    _lastSubmittedReportId = null;
     try {
       final userId = _supabase.auth.currentUser?.id;
       if (userId == null) throw Exception('Not logged in');
@@ -125,7 +128,8 @@ class ReportProvider extends ChangeNotifier {
           .select('id')
           .single();
 
-      final reportId = reportRes['id'];
+      final reportId = reportRes['id'].toString();
+      _lastSubmittedReportId = reportId;
 
       // If we have GPS coordinates, insert them into report_locations
       if (latitude != null && longitude != null) {
@@ -165,6 +169,36 @@ class ReportProvider extends ChangeNotifier {
       return false;
     } finally {
       _setLoading(false);
+    }
+  }
+
+  Future<bool> updateEmergencyLocation({
+    required String reportId,
+    required double latitude,
+    required double longitude,
+    double? accuracy,
+  }) async {
+    try {
+      final location = {
+        'latitude': latitude,
+        'longitude': longitude,
+        'accuracy': accuracy ?? 10.0,
+      };
+      final updated = await _supabase
+          .from('report_locations')
+          .update(location)
+          .eq('report_id', reportId)
+          .select('report_id');
+      if (updated.isEmpty) {
+        await _supabase.from('report_locations').insert({
+          'report_id': reportId,
+          ...location,
+        });
+      }
+      return true;
+    } catch (error) {
+      debugPrint('Unable to update emergency location: $error');
+      return false;
     }
   }
 

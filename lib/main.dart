@@ -4,9 +4,9 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 
 import 'theme/app_theme.dart';
 import 'screens/modern_resident_dashboard.dart';
-import 'screens/emergency_sos_screen.dart';
-import 'screens/concern_reporting_form.dart';
-import 'screens/report_tracking.dart';
+import 'screens/modern_emergency_sos.dart';
+import 'screens/modern_concern_reporting_form.dart';
+import 'screens/modern_report_tracking.dart';
 import 'screens/admin_priority_queue.dart';
 import 'screens/admin_verification_screen.dart';
 import 'screens/admin_announcements_screen.dart';
@@ -80,9 +80,9 @@ class HelpHubApp extends StatelessWidget {
         '/': (context) => const ModernLoginScreen(),
         '/login': (context) => const ModernLoginScreen(),
         '/resident_home': (context) => const ModernResidentDashboard(),
-        '/emergency_sos': (context) => const EmergencySOSScreen(),
-        '/report_concern': (context) => const ConcernReportingForm(),
-        '/report_tracking': (context) => const ReportTracking(),
+        '/emergency_sos': (context) => const ModernEmergencySos(),
+        '/report_concern': (context) => const ModernConcernReportingForm(),
+        '/report_tracking': (context) => const ModernReportTracking(),
         '/admin_queue': (context) => const AdminPriorityQueue(),
         '/profile': (context) => ProfileScreen(),
         '/admin_verification': (context) => const AdminVerificationScreen(),

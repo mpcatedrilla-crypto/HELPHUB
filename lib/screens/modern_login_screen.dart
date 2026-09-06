@@ -20,6 +20,7 @@ class _ModernLoginScreenState extends State<ModernLoginScreen> {
 
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _pageScrollController = ScrollController();
   bool _obscurePassword = true;
 
   @override
@@ -39,6 +40,7 @@ class _ModernLoginScreenState extends State<ModernLoginScreen> {
   void dispose() {
     _emailController.dispose();
     _passwordController.dispose();
+    _pageScrollController.dispose();
     super.dispose();
   }
 
@@ -66,49 +68,45 @@ class _ModernLoginScreenState extends State<ModernLoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _blue,
-      resizeToAvoidBottomInset: true,
+      resizeToAvoidBottomInset: false,
       body: Consumer<AuthProvider>(
         builder: (context, auth, _) {
           return LayoutBuilder(
             builder: (context, constraints) {
+              final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+              final designHeight = constraints.maxHeight < 640
+                  ? 640.0
+                  : constraints.maxHeight;
+              final canvas = SizedBox(
+                height: designHeight,
+                child: CustomPaint(
+                  painter: const _GeometricLoginPainter(),
+                  child: Column(
+                    children: [
+                      const SizedBox(
+                        height: 170,
+                        child: SafeArea(
+                          bottom: false,
+                          child: Center(child: _CrestLogo()),
+                        ),
+                      ),
+                      Expanded(child: Center(child: _loginPanel(auth))),
+                      const _SecureFooter(),
+                    ],
+                  ),
+                ),
+              );
               return Container(
                 decoration: const BoxDecoration(
                   gradient: LinearGradient(colors: [_cyan, _blue]),
                 ),
                 child: SingleChildScrollView(
+                  controller: _pageScrollController,
+                  primary: false,
                   keyboardDismissBehavior:
                       ScrollViewKeyboardDismissBehavior.onDrag,
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(
-                      minHeight: constraints.maxHeight,
-                    ),
-                    child: Align(
-                      alignment: Alignment.topCenter,
-                      child: SizedBox(
-                        height: 640,
-                        child: CustomPaint(
-                          painter: const _GeometricLoginPainter(),
-                          child: Column(
-                            children: [
-                              const SizedBox(
-                                height: 170,
-                                child: SafeArea(
-                                  bottom: false,
-                                  child: Center(child: _CrestLogo()),
-                                ),
-                              ),
-                              Expanded(
-                                child: SingleChildScrollView(
-                                  child: _loginPanel(auth),
-                                ),
-                              ),
-                              const _SecureFooter(),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
+                  padding: EdgeInsets.only(bottom: keyboardInset),
+                  child: canvas,
                 ),
               );
             },
@@ -160,6 +158,7 @@ class _ModernLoginScreenState extends State<ModernLoginScreen> {
               const SizedBox(height: 3),
               TextField(
                 controller: _emailController,
+                scrollPadding: const EdgeInsets.only(bottom: 140),
                 enabled: auth.state != AuthState.loading,
                 keyboardType: TextInputType.emailAddress,
                 textInputAction: TextInputAction.next,
@@ -175,6 +174,7 @@ class _ModernLoginScreenState extends State<ModernLoginScreen> {
               const SizedBox(height: 3),
               TextField(
                 controller: _passwordController,
+                scrollPadding: const EdgeInsets.only(bottom: 140),
                 enabled: auth.state != AuthState.loading,
                 obscureText: _obscurePassword,
                 textInputAction: TextInputAction.done,

@@ -6,7 +6,7 @@ import '../providers/admin_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/profile_provider.dart';
 import '../providers/report_provider.dart';
-import 'resident_announcements_screen.dart';
+import 'modern_resident_announcements.dart';
 
 class ModernResidentDashboard extends StatefulWidget {
   const ModernResidentDashboard({super.key});
@@ -51,6 +51,9 @@ class _ModernResidentDashboardState extends State<ModernResidentDashboard> {
         color: _blue,
         child: LayoutBuilder(
           builder: (context, constraints) {
+            final extraHeight = (constraints.maxHeight - 640)
+                .clamp(0.0, 220.0)
+                .toDouble();
             return SingleChildScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
               child: ConstrainedBox(
@@ -65,7 +68,7 @@ class _ModernResidentDashboardState extends State<ModernResidentDashboard> {
                         onNotifications: () => Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => const ResidentAnnouncementsScreen(),
+                            builder: (_) => const ModernResidentAnnouncements(),
                           ),
                         ),
                         onProfile: () =>
@@ -74,7 +77,7 @@ class _ModernResidentDashboardState extends State<ModernResidentDashboard> {
                       _WelcomeCard(
                         name: _firstName(profile.fullName, auth.userName),
                       ),
-                      const SizedBox(height: 25),
+                      SizedBox(height: 25 + (extraHeight * .10)),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 34),
                         child: GridView.count(
@@ -114,7 +117,7 @@ class _ModernResidentDashboardState extends State<ModernResidentDashboard> {
                                         context,
                                         MaterialPageRoute(
                                           builder: (_) =>
-                                              const ResidentAnnouncementsScreen(),
+                                              const ModernResidentAnnouncements(),
                                         ),
                                       ),
                                     ),
@@ -134,7 +137,7 @@ class _ModernResidentDashboardState extends State<ModernResidentDashboard> {
                                   .scale(begin: const Offset(.96, .96)),
                         ),
                       ),
-                      const SizedBox(height: 15),
+                      SizedBox(height: 15 + (extraHeight * .07)),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 27),
                         child: Row(
@@ -241,7 +244,7 @@ class _DashboardBackgroundPainter extends CustomPainter {
         ],
       ).createShader(Rect.fromLTWH(0, 0, size.width, 150));
     canvas.drawRect(Rect.fromLTWH(0, 0, size.width, 105), top);
-    const designFooterTop = 546.0;
+    final designFooterTop = size.height > 640 ? size.height - 94 : 546.0;
     final bottom = Path()
       ..moveTo(0, designFooterTop)
       ..lineTo(size.width * .45, designFooterTop + 94)
