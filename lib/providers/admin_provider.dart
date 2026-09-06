@@ -68,6 +68,19 @@ class AdminProvider extends ChangeNotifier {
         >()
         ?.createNotificationChannel(channel);
 
+    const normalChannel = AndroidNotificationChannel(
+      'normal_reports_v1',
+      'Standard Reports',
+      description: 'Notifications for standard community reports',
+      importance: Importance.defaultImportance,
+      playSound: true,
+    );
+    await _notificationsPlugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
+        ?.createNotificationChannel(normalChannel);
+
     // Request notification permissions for Android 13+
     await _notificationsPlugin
         .resolvePlatformSpecificImplementation<
@@ -113,15 +126,26 @@ class AdminProvider extends ChangeNotifier {
 
   Future<void> _savePushToken(String token) async {
     final user = _supabase.auth.currentUser;
-    if (!_isAdminSessionActive || user == null) return;
+    // Guard: only save if we have a logged-in user (don't require session flag
+    // to be set yet — it may not be set during app-restore timing)
+    if (user == null) return;
 
     try {
+      // Verify this user is actually an admin before saving
+      final profile = await _supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', user.id)
+          .maybeSingle();
+      if (profile == null || profile['role'] != 'admin') return;
+
       await _supabase.from('admin_push_tokens').upsert({
         'token': token,
         'user_id': user.id,
         'platform': 'android',
         'updated_at': DateTime.now().toUtc().toIso8601String(),
       }, onConflict: 'token');
+      debugPrint('Push token saved successfully for admin ${user.id}');
     } catch (error) {
       debugPrint('Unable to register this device for SOS alerts: $error');
     }
@@ -130,6 +154,26 @@ class AdminProvider extends ChangeNotifier {
   void _handleRemoteEmergency(RemoteMessage message) {
     if (!_isAdminSessionActive) return;
     final type = message.data['type']?.toString();
+    
+    if (type == 'normal_report') {
+      final title = message.data['report_title']?.toString() ?? message.notification?.body ?? 'New Report';
+      _notificationsPlugin.show(
+        id: DateTime.now().millisecond,
+        title: 'New Community Report',
+        body: title,
+        notificationDetails: const NotificationDetails(
+          android: AndroidNotificationDetails(
+            'normal_reports_v1',
+            'Standard Reports',
+            importance: Importance.defaultImportance,
+            priority: Priority.defaultPriority,
+          ),
+        ),
+      );
+      _onNewEmergency?.call(); // Refresh UI
+      return;
+    }
+
     if (type != null && type != 'critical_sos') return;
 
     final reportId = message.data['report_id']?.toString();

@@ -31,7 +31,7 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 5, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final reportProvider = Provider.of<ReportProvider>(
         context,
@@ -148,6 +148,7 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
             Tab(icon: Icon(Icons.emergency, size: 18), text: 'Emergencies'),
             Tab(icon: Icon(Icons.hourglass_top, size: 18), text: 'Active'),
             Tab(icon: Icon(Icons.check_circle, size: 18), text: 'Resolved'),
+            Tab(icon: Icon(Icons.archive, size: 18), text: 'Archived'),
           ],
         ),
       ),
@@ -160,7 +161,10 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
 
           final rawAllReports = provider.allReports;
           final emergencyReports = rawAllReports
-              .where((r) => r['is_critical_override'] == true)
+              .where((r) =>
+                  r['is_critical_override'] == true &&
+                  !['resolved', 'closed', 'archived', 'referred', 'false_alarm']
+                      .contains(r['status']))
               .toList();
           final activeReports = rawAllReports
               .where(
@@ -177,11 +181,14 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
                 (r) => [
                   'resolved',
                   'closed',
-                  'archived',
                   'referred',
                   'false_alarm',
                 ].contains(r['status']),
               )
+              .toList();
+
+          final archivedReports = rawAllReports
+              .where((r) => r['status'] == 'archived')
               .toList();
           
           final allReports = rawAllReports
@@ -230,6 +237,15 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
                 emptyDetail: 'Completed response cases will be collected here.',
                 emptyIcon: Icons.inventory_2_rounded,
               ),
+              _buildReportList(
+                archivedReports,
+                provider,
+                adminProvider,
+                emptyMsg: 'No archived reports',
+                emptyDetail: 'Reports that have been archived for record-keeping will appear here.',
+                emptyIcon: Icons.archive_rounded,
+                isArchiveTab: true,
+              ),
             ],
           );
         },
@@ -244,6 +260,7 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
     required String emptyMsg,
     required String emptyDetail,
     required IconData emptyIcon,
+    bool isArchiveTab = false,
   }) {
     return RefreshIndicator(
       onRefresh: () async {
@@ -290,6 +307,7 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
                       currentStatus: r['status'] ?? 'submitted',
                       isEmergency: r['is_critical_override'] == true,
                       adminProofUrl: r['admin_proof_url'],
+                      isReadOnly: isArchiveTab,
                     )
                     .animate()
                     .fadeIn(
@@ -683,6 +701,7 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
     String currentStatus = 'submitted',
     bool isEmergency = false,
     String? adminProofUrl,
+    bool isReadOnly = false,
   }) {
     String assignedTo = "Unassigned";
     if (currentDestinationId != null) {
@@ -704,7 +723,7 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
     };
 
     List<Map<String, dynamic>> nextActions = [];
-    if (isEmergency) {
+    if (!isReadOnly && isEmergency) {
       if (currentStatus == 'submitted') {
         nextActions = [
           {
@@ -758,8 +777,17 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
             'color': Colors.grey,
           },
         ];
+      } else if (currentStatus == 'closed') {
+        nextActions = [
+          {
+            'label': 'Archive Report',
+            'icon': Icons.archive,
+            'status': 'archived',
+            'color': Colors.grey.shade600,
+          },
+        ];
       }
-    } else {
+    } else if (!isReadOnly) {
       if (currentStatus == 'submitted') {
         nextActions = [
           {
