@@ -294,6 +294,8 @@ class AdminProvider extends ChangeNotifier {
 
   List<Map<String, dynamic>> _pendingResidents = [];
   List<Map<String, dynamic>> get pendingResidents => _pendingResidents;
+  String? _verificationError;
+  String? get verificationError => _verificationError;
 
   List<Map<String, dynamic>> _announcements = [];
   List<Map<String, dynamic>> get announcements => _announcements;
@@ -306,18 +308,76 @@ class AdminProvider extends ChangeNotifier {
 
   Future<void> fetchPendingResidents() async {
     _isLoading = true;
+    _verificationError = null;
     notifyListeners();
     try {
-      final res = await _supabase
-          .from('profiles')
-          .select()
-          .eq('status', 'pending');
-      _pendingResidents = List<Map<String, dynamic>>.from(res);
+      List<dynamic> res;
+      try {
+        res = await _supabase
+            .from('profiles')
+            .select()
+            .eq('status', 'pending')
+            .order('verification_requested_at', ascending: false);
+      } on PostgrestException {
+        // Compatibility fallback until the verification migration is applied.
+        res = await _supabase.from('profiles').select().eq('status', 'pending');
+      }
+      final residents = List<Map<String, dynamic>>.from(res);
+      _pendingResidents = await Future.wait(
+        residents.map(_hydrateResidentAvatar),
+      );
     } catch (e) {
+      _verificationError =
+          'Unable to load resident applications. Pull down to try again.';
       debugPrint('Error fetching residents: $e');
     }
     _isLoading = false;
     notifyListeners();
+  }
+
+  Future<Map<String, dynamic>?> fetchResidentDetails(String profileId) async {
+    try {
+      final result = await _supabase
+          .from('profiles')
+          .select()
+          .eq('id', profileId)
+          .maybeSingle();
+      if (result == null) return null;
+      return await _hydrateResidentAvatar(Map<String, dynamic>.from(result));
+    } catch (error) {
+      debugPrint('Error fetching resident details: $error');
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>> _hydrateResidentAvatar(
+    Map<String, dynamic> resident,
+  ) async {
+    final existingUrl = resident['avatar_url']?.toString().trim() ?? '';
+    final profileId = resident['id']?.toString().trim() ?? '';
+    if (existingUrl.isNotEmpty || profileId.isEmpty) return resident;
+
+    try {
+      final files = await _supabase.storage
+          .from('avatars')
+          .list(
+            path: profileId,
+            searchOptions: const SearchOptions(limit: 20, search: 'profile.'),
+          );
+      final candidates = files
+          .where((file) => file.name.toLowerCase().startsWith('profile.'))
+          .toList();
+      if (candidates.isEmpty) return resident;
+      candidates.sort(
+        (a, b) => (b.updatedAt ?? '').compareTo(a.updatedAt ?? ''),
+      );
+      final storagePath = '$profileId/${candidates.first.name}';
+      resident['avatar_url'] =
+          '${_supabase.storage.from('avatars').getPublicUrl(storagePath)}?v=${DateTime.now().millisecondsSinceEpoch}';
+    } catch (error) {
+      debugPrint('Unable to recover resident avatar from storage: $error');
+    }
+    return resident;
   }
 
   Future<bool> reviewResident(String profileId, String status) async {

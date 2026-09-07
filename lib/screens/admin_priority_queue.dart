@@ -114,17 +114,42 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
         backgroundColor: const Color(0xFF0A1128),
         elevation: 0,
         toolbarHeight: 68,
-        title: const Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        titleSpacing: 4,
+        title: Row(
           children: [
-            Text('Priority queue', style: TextStyle(color: Colors.white)),
-            SizedBox(height: 2),
-            Text(
-              'Community response command',
-              style: TextStyle(
-                color: Colors.white60,
-                fontSize: 11,
-                fontWeight: FontWeight.w500,
+            Container(
+              width: 42,
+              height: 42,
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Image.asset(
+                'assets/images/helphub_crest.png',
+                fit: BoxFit.contain,
+                filterQuality: FilterQuality.high,
+              ),
+            ),
+            const SizedBox(width: 10),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('Priority queue'),
+                  SizedBox(height: 2),
+                  Text(
+                    'Community response command',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white60,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -161,10 +186,17 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
 
           final rawAllReports = provider.allReports;
           final emergencyReports = rawAllReports
-              .where((r) =>
-                  r['is_critical_override'] == true &&
-                  !['resolved', 'closed', 'archived', 'referred', 'false_alarm']
-                      .contains(r['status']))
+              .where(
+                (r) =>
+                    r['is_critical_override'] == true &&
+                    ![
+                      'resolved',
+                      'closed',
+                      'archived',
+                      'referred',
+                      'false_alarm',
+                    ].contains(r['status']),
+              )
               .toList();
           final activeReports = rawAllReports
               .where(
@@ -190,7 +222,7 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
           final archivedReports = rawAllReports
               .where((r) => r['status'] == 'archived')
               .toList();
-          
+
           final allReports = rawAllReports
               .where(
                 (r) => ![
@@ -841,9 +873,7 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
       margin: const EdgeInsets.only(bottom: 16),
       color: Colors.white,
       elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-      ),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
@@ -857,7 +887,9 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
                     _StatusPill(
                       label: badgeText,
                       color: badgeColor,
-                      icon: isEmergency ? Icons.emergency_rounded : Icons.flag_rounded,
+                      icon: isEmergency
+                          ? Icons.emergency_rounded
+                          : Icons.flag_rounded,
                       filled: true,
                     ),
                     const SizedBox(width: 8),
@@ -868,13 +900,21 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
                     ),
                   ],
                 ),
-                Icon(Icons.more_horiz_rounded, color: Colors.grey.shade400, size: 20),
+                Icon(
+                  Icons.more_horiz_rounded,
+                  color: Colors.grey.shade400,
+                  size: 20,
+                ),
               ],
             ),
             const SizedBox(height: 12),
             Text(
               title,
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black87),
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 16,
+                color: Colors.black87,
+              ),
             ),
             const SizedBox(height: 4),
             Text(
@@ -887,7 +927,9 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
                 Icon(Icons.location_on, color: Colors.grey.shade500, size: 14),
                 const SizedBox(width: 4),
                 Text(
-                  assignedTo == 'Unassigned' ? 'Awaiting dispatcher' : assignedTo,
+                  assignedTo == 'Unassigned'
+                      ? 'Awaiting dispatcher'
+                      : assignedTo,
                   style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
                 ),
                 const SizedBox(width: 16),
@@ -899,26 +941,34 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
                 ),
               ],
             ),
-            if ((evidence != null && evidence.isNotEmpty) || adminProofUrl != null) ...[
-               const SizedBox(height: 16),
-               const Text('Evidence & Proof', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
-               const SizedBox(height: 8),
-               SizedBox(
-                 height: 70,
-                 child: ListView(
-                   scrollDirection: Axis.horizontal,
-                   children: [
-                     if (evidence != null && evidence.isNotEmpty)
-                       ...evidence.map((e) {
-                         final storagePath = e['storage_path'];
-                         final url = provider.getEvidenceUrl(storagePath);
-                         return _buildThumbnail(url, false);
-                       }).toList(),
-                     if (adminProofUrl != null)
-                       _buildThumbnail(adminProofUrl, true),
-                   ],
-                 )
-               )
+            if ((evidence != null && evidence.isNotEmpty) ||
+                adminProofUrl != null) ...[
+              const SizedBox(height: 16),
+              const Text(
+                'Evidence & Proof',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.grey,
+                ),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 70,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  children: [
+                    if (evidence != null && evidence.isNotEmpty)
+                      ...evidence.map((e) {
+                        final storagePath = e['storage_path'];
+                        final url = provider.getEvidenceUrl(storagePath);
+                        return _buildThumbnail(url, false);
+                      }).toList(),
+                    if (adminProofUrl != null)
+                      _buildThumbnail(adminProofUrl, true),
+                  ],
+                ),
+              ),
             ],
             const SizedBox(height: 16),
             Row(
@@ -927,25 +977,40 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
                   Expanded(
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: nextActions.first['color'] ?? AppTheme.primaryBlue,
+                        backgroundColor:
+                            nextActions.first['color'] ?? AppTheme.primaryBlue,
                         foregroundColor: Colors.white,
                         elevation: 0,
                         padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
                       ),
                       onPressed: () async {
-                         final action = nextActions.first;
-                         if (action['requiresDialog'] == true) {
-                            _showResolveDialog(context, provider, reportId);
-                         } else {
-                            final success = await provider.updateReportStatus(reportId, action['status']);
-                            if (context.mounted) {
-                               ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                                   content: Text(success ? 'Status updated to "${action['label']}"' : (provider.errorMessage ?? 'Update failed')),
-                                   backgroundColor: success ? Colors.green : Colors.red,
-                               ));
-                            }
-                         }
+                        final action = nextActions.first;
+                        if (action['requiresDialog'] == true) {
+                          _showResolveDialog(context, provider, reportId);
+                        } else {
+                          final success = await provider.updateReportStatus(
+                            reportId,
+                            action['status'],
+                          );
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  success
+                                      ? 'Status updated to "${action['label']}"'
+                                      : (provider.errorMessage ??
+                                            'Update failed'),
+                                ),
+                                backgroundColor: success
+                                    ? Colors.green
+                                    : Colors.red,
+                              ),
+                            );
+                          }
+                        }
                       },
                       child: Text(nextActions.first['label']),
                     ),
@@ -957,12 +1022,25 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
                       foregroundColor: Colors.grey.shade700,
                       side: BorderSide(color: Colors.grey.shade300),
                       padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                     ),
                     onPressed: () {
                       _openDetailsSheet(
-                        context, title, badgeText, badgeColor, statusLabel, statusColor,
-                        priorityLabel, isEmergency, nextActions, provider, reportId, adminProvider, currentDestinationId
+                        context,
+                        title,
+                        badgeText,
+                        badgeColor,
+                        statusLabel,
+                        statusColor,
+                        priorityLabel,
+                        isEmergency,
+                        nextActions,
+                        provider,
+                        reportId,
+                        adminProvider,
+                        currentDestinationId,
                       );
                     },
                     child: const Text('View Details'),
@@ -979,7 +1057,10 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
   Widget _buildThumbnail(String url, bool isProof) {
     return GestureDetector(
       onTap: () {
-        Navigator.push(context, MaterialPageRoute(builder: (_) => _FullScreenImageViewer(url: url)));
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => _FullScreenImageViewer(url: url)),
+        );
       },
       child: Container(
         margin: const EdgeInsets.only(right: 8),
@@ -996,7 +1077,11 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
                   width: double.infinity,
                   color: Colors.black54,
                   padding: const EdgeInsets.symmetric(vertical: 2),
-                  child: const Text('Resolution Proof', style: TextStyle(color: Colors.white, fontSize: 8), textAlign: TextAlign.center),
+                  child: const Text(
+                    'Resolution Proof',
+                    style: TextStyle(color: Colors.white, fontSize: 8),
+                    textAlign: TextAlign.center,
+                  ),
                 ),
               )
             : null,
@@ -1005,10 +1090,19 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
   }
 
   void _openDetailsSheet(
-    BuildContext context, String title, String badgeText, Color badgeColor,
-    String statusLabel, Color statusColor, String priorityLabel, bool isEmergency,
-    List<Map<String, dynamic>> nextActions, ReportProvider provider, String reportId,
-    AdminProvider adminProvider, String? currentDestinationId
+    BuildContext context,
+    String title,
+    String badgeText,
+    Color badgeColor,
+    String statusLabel,
+    Color statusColor,
+    String priorityLabel,
+    bool isEmergency,
+    List<Map<String, dynamic>> nextActions,
+    ReportProvider provider,
+    String reportId,
+    AdminProvider adminProvider,
+    String? currentDestinationId,
   ) {
     showModalBottomSheet(
       context: context,
@@ -1037,7 +1131,9 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Icon(
-                            isEmergency ? Icons.emergency_rounded : Icons.assignment_rounded,
+                            isEmergency
+                                ? Icons.emergency_rounded
+                                : Icons.assignment_rounded,
                             color: badgeColor,
                           ),
                         ),
@@ -1081,9 +1177,14 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
                 const _SheetSectionLabel('NEXT ACTION'),
                 ...nextActions.map(
                   (action) => Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 3,
+                    ),
                     child: ListTile(
-                      tileColor: (action['color'] as Color).withValues(alpha: 0.07),
+                      tileColor: (action['color'] as Color).withValues(
+                        alpha: 0.07,
+                      ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14),
                       ),
@@ -1091,7 +1192,9 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
                         width: 38,
                         height: 38,
                         decoration: BoxDecoration(
-                          color: (action['color'] as Color).withValues(alpha: 0.12),
+                          color: (action['color'] as Color).withValues(
+                            alpha: 0.12,
+                          ),
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Icon(
@@ -1127,9 +1230,12 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
                                 content: Text(
                                   success
                                       ? 'Status updated to "${action['label']}"'
-                                      : (provider.errorMessage ?? 'Update failed'),
+                                      : (provider.errorMessage ??
+                                            'Update failed'),
                                 ),
-                                backgroundColor: success ? Colors.green : Colors.red,
+                                backgroundColor: success
+                                    ? Colors.green
+                                    : Colors.red,
                               ),
                             );
                           }
@@ -1162,16 +1268,10 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
                   ),
                   title: Text(dest['destination_name']),
                   trailing: currentDestinationId == dest['id']
-                      ? const Icon(
-                          Icons.check,
-                          color: AppTheme.primaryBlue,
-                        )
+                      ? const Icon(Icons.check, color: AppTheme.primaryBlue)
                       : null,
                   onTap: () {
-                    adminProvider.assignReportDestination(
-                      reportId,
-                      dest['id'],
-                    );
+                    adminProvider.assignReportDestination(reportId, dest['id']);
                     Navigator.pop(ctx);
                   },
                 ),
@@ -1679,4 +1779,3 @@ class _FullScreenMapViewer extends StatelessWidget {
     );
   }
 }
-

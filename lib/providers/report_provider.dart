@@ -54,6 +54,12 @@ class ReportProvider extends ChangeNotifier {
   int get resolvedReportsCount =>
       _myReports.where((r) => r['status'] == 'resolved').length;
 
+  void clearMyReports() {
+    if (_myReports.isEmpty) return;
+    _myReports = [];
+    notifyListeners();
+  }
+
   Future<void> fetchConcernTypes() async {
     try {
       final response = await _supabase
@@ -132,6 +138,18 @@ class ReportProvider extends ChangeNotifier {
     try {
       final userId = _supabase.auth.currentUser?.id;
       if (userId == null) throw Exception('Not logged in');
+
+      final profile = await _supabase
+          .from('profiles')
+          .select('status, role')
+          .eq('id', userId)
+          .maybeSingle();
+      final canSubmit =
+          profile?['status'] == 'approved' && profile?['role'] == 'resident';
+      if (!canSubmit) {
+        _errorMessage = 'Account verification is required before submitting a report or SOS.';
+        return false;
+      }
 
       // Basic local priority calculation
       int score = isEmergency ? 100 : (populationScale * 10);

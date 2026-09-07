@@ -22,6 +22,7 @@ class _ModernLoginScreenState extends State<ModernLoginScreen> {
   final _passwordController = TextEditingController();
   final _pageScrollController = ScrollController();
   bool _obscurePassword = true;
+  bool _checkingSavedAccount = true;
 
   @override
   void initState() {
@@ -34,6 +35,7 @@ class _ModernLoginScreenState extends State<ModernLoginScreen> {
         systemNavigationBarIconBrightness: Brightness.light,
       ),
     );
+    WidgetsBinding.instance.addPostFrameCallback((_) => _restoreSavedAccount());
   }
 
   @override
@@ -49,10 +51,40 @@ class _ModernLoginScreenState extends State<ModernLoginScreen> {
     final auth = context.read<AuthProvider>();
     await auth.login(_emailController.text.trim(), _passwordController.text);
     if (!mounted || auth.state != AuthState.authenticated) return;
+    final saveAccount = await _showSaveAccountPrompt(auth.role);
+    if (!mounted) return;
+    await auth.setAutoSaveAccount(saveAccount);
+    if (!mounted) return;
     Navigator.pushReplacementNamed(
       context,
       auth.role == UserRole.admin ? '/admin_queue' : '/resident_home',
     );
+  }
+
+  Future<void> _restoreSavedAccount() async {
+    final auth = context.read<AuthProvider>();
+    final restored = await auth.restoreSavedAccount();
+    if (!mounted) return;
+    if (restored) {
+      Navigator.pushReplacementNamed(
+        context,
+        auth.role == UserRole.admin ? '/admin_queue' : '/resident_home',
+      );
+      return;
+    }
+    setState(() => _checkingSavedAccount = false);
+  }
+
+  Future<bool> _showSaveAccountPrompt(UserRole role) async {
+    final result = await showModalBottomSheet<bool>(
+      context: context,
+      isDismissible: false,
+      enableDrag: false,
+      backgroundColor: Colors.transparent,
+      builder: (context) =>
+          _SaveAccountSheet(isAdministrator: role == UserRole.admin),
+    );
+    return result ?? false;
   }
 
   void _forgotPassword() {
@@ -159,7 +191,8 @@ class _ModernLoginScreenState extends State<ModernLoginScreen> {
               TextField(
                 controller: _emailController,
                 scrollPadding: const EdgeInsets.only(bottom: 140),
-                enabled: auth.state != AuthState.loading,
+                enabled:
+                    auth.state != AuthState.loading && !_checkingSavedAccount,
                 keyboardType: TextInputType.emailAddress,
                 textInputAction: TextInputAction.next,
                 autofillHints: const [AutofillHints.email],
@@ -175,12 +208,16 @@ class _ModernLoginScreenState extends State<ModernLoginScreen> {
               TextField(
                 controller: _passwordController,
                 scrollPadding: const EdgeInsets.only(bottom: 140),
-                enabled: auth.state != AuthState.loading,
+                enabled:
+                    auth.state != AuthState.loading && !_checkingSavedAccount,
                 obscureText: _obscurePassword,
                 textInputAction: TextInputAction.done,
                 autofillHints: const [AutofillHints.password],
                 onSubmitted: (_) {
-                  if (auth.state != AuthState.loading) _login();
+                  if (auth.state != AuthState.loading &&
+                      !_checkingSavedAccount) {
+                    _login();
+                  }
                 },
                 style: const TextStyle(fontSize: 13, color: _ink),
                 decoration: _fieldDecoration(
@@ -221,11 +258,13 @@ class _ModernLoginScreenState extends State<ModernLoginScreen> {
               ),
               const SizedBox(height: 12),
               _GradientLoginButton(
-                loading: auth.state == AuthState.loading,
+                loading:
+                    auth.state == AuthState.loading || _checkingSavedAccount,
                 onPressed: _login,
               ),
               TextButton(
-                onPressed: auth.state == AuthState.loading
+                onPressed:
+                    auth.state == AuthState.loading || _checkingSavedAccount
                     ? null
                     : () => Navigator.push(
                         context,
@@ -475,6 +514,128 @@ class _GradientLoginButton extends StatelessWidget {
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SaveAccountSheet extends StatelessWidget {
+  const _SaveAccountSheet({required this.isAdministrator});
+
+  final bool isAdministrator;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 42,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 22),
+              decoration: BoxDecoration(
+                color: const Color(0xFFD3D6DB),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Container(
+              width: 68,
+              height: 68,
+              decoration: const BoxDecoration(
+                color: Color(0xFFE9F7FC),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                isAdministrator
+                    ? Icons.admin_panel_settings_rounded
+                    : Icons.account_circle_rounded,
+                color: _ModernLoginScreenState._blue,
+                size: 44,
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Save this account?',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: _ModernLoginScreenState._ink,
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              isAdministrator
+                  ? 'Stay signed in on this trusted phone for faster access to the priority queue, SOS alerts, and administrator tools.'
+                  : 'Stay signed in on this phone for faster access to SOS, reports, and community updates.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Color(0xFF5F646B),
+                fontSize: 13,
+                height: 1.45,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF5F7FA),
+                borderRadius: BorderRadius.circular(11),
+              ),
+              child: const Row(
+                children: [
+                  Icon(
+                    Icons.lock_outline_rounded,
+                    color: _ModernLoginScreenState._blue,
+                    size: 19,
+                  ),
+                  SizedBox(width: 9),
+                  Expanded(
+                    child: Text(
+                      'HelpHub will not store your password.',
+                      style: TextStyle(fontSize: 11, color: Color(0xFF4E535A)),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () => Navigator.pop(context, true),
+                icon: const Icon(Icons.check_circle_outline_rounded, size: 19),
+                label: const Text('Save Account'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF2400B8),
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size.fromHeight(48),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(13),
+                  ),
+                  textStyle: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              style: TextButton.styleFrom(
+                foregroundColor: const Color(0xFF5D6269),
+                minimumSize: const Size.fromHeight(42),
+              ),
+              child: const Text('Not now'),
+            ),
+          ],
         ),
       ),
     );

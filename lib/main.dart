@@ -11,6 +11,7 @@ import 'screens/admin_priority_queue.dart';
 import 'screens/admin_verification_screen.dart';
 import 'screens/admin_announcements_screen.dart';
 import 'screens/audit_log_screen.dart';
+import 'screens/admin_profile_screen.dart';
 
 import 'package:provider/provider.dart';
 
@@ -20,6 +21,7 @@ import 'providers/admin_provider.dart';
 import 'providers/profile_provider.dart';
 import 'screens/modern_login_screen.dart';
 import 'screens/profile_screen.dart';
+import 'widgets/verified_resident_gate.dart';
 
 import 'package:supabase_flutter/supabase_flutter.dart' hide AuthState;
 
@@ -88,10 +90,20 @@ class HelpHubApp extends StatelessWidget {
       routes: {
         '/login': (context) => const ModernLoginScreen(),
         '/resident_home': (context) => const ModernResidentDashboard(),
-        '/emergency_sos': (context) => const ModernEmergencySos(),
-        '/report_concern': (context) => const ModernConcernReportingForm(),
-        '/report_tracking': (context) => const ModernReportTracking(),
+        '/emergency_sos': (context) => const VerifiedResidentGate(
+          featureName: 'Emergency SOS',
+          child: ModernEmergencySos(),
+        ),
+        '/report_concern': (context) => const VerifiedResidentGate(
+          featureName: 'Report Concern',
+          child: ModernConcernReportingForm(),
+        ),
+        '/report_tracking': (context) => const VerifiedResidentGate(
+          featureName: 'My Reports',
+          child: ModernReportTracking(),
+        ),
         '/admin_queue': (context) => const AdminPriorityQueue(),
+        '/admin_profile': (context) => const AdminProfileScreen(),
         '/profile': (context) => ProfileScreen(),
         '/admin_verification': (context) => const AdminVerificationScreen(),
         '/admin_announcements': (context) => const AdminAnnouncementsScreen(),
