@@ -144,6 +144,42 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _requestVerification(ProfileProvider profile) async {
+    if (profile.avatarUrl == null) {
+      setState(() => _editing = true);
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(22),
+          ),
+          icon: const Icon(Icons.add_a_photo_rounded, color: _purple, size: 42),
+          title: const Text(
+            'Profile photo required',
+            textAlign: TextAlign.center,
+          ),
+          content: const Text(
+            'For identity verification, upload a clear profile photo and tap Apply Changes before submitting your request.',
+            textAlign: TextAlign.center,
+            style: TextStyle(height: 1.45, color: Colors.black54),
+          ),
+          actions: [
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () {
+                  Navigator.pop(dialogContext);
+                  _pickAvatar();
+                },
+                style: FilledButton.styleFrom(backgroundColor: _purple),
+                icon: const Icon(Icons.photo_library_outlined),
+                label: const Text('Choose Profile Photo'),
+              ),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
     final success = await profile.requestVerification();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -164,137 +200,215 @@ class _ProfileScreenState extends State<ProfileScreen> {
     Navigator.pushNamedAndRemoveUntil(context, '/', (_) => false);
   }
 
+  void _cancelEditing() {
+    FocusManager.instance.primaryFocus?.unfocus();
+    final profile = context.read<ProfileProvider>();
+    _syncFields(profile);
+    setState(() {
+      _editing = false;
+      _selectedAvatar = null;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _blue,
-      resizeToAvoidBottomInset: false,
+      resizeToAvoidBottomInset: true,
       body: Consumer<ProfileProvider>(
         builder: (context, profile, _) {
-          return LayoutBuilder(
-            builder: (context, constraints) {
-              final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
-              final designHeight = constraints.maxHeight < 640
-                  ? 640.0
-                  : constraints.maxHeight;
-              final canvas = SizedBox(
-                height: designHeight,
-                child: CustomPaint(
-                  painter: const _ProfileBackgroundPainter(),
-                  child: Column(
-                    children: [
-                      _ProfileHeader(
-                        profile: profile,
-                        editing: _editing,
-                        selectedAvatar: _selectedAvatar,
-                        onBack: () => Navigator.pop(context),
-                        onLogout: _logout,
-                        onEdit: () => setState(() => _editing = true),
-                        onAvatarTap: _pickAvatar,
-                      ),
-                      Expanded(
-                        child: _profileForm(
-                          profile,
-                          spreadFields: designHeight > 680,
+          return Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [_cyan, _blue],
+              ),
+            ),
+            child: SafeArea(
+              bottom: false,
+              child: Column(
+                children: [
+                  _ProfileHeader(
+                    profile: profile,
+                    editing: _editing,
+                    selectedAvatar: _selectedAvatar,
+                    onBack: () => Navigator.pop(context),
+                    onLogout: _logout,
+                    onEdit: () => setState(() => _editing = true),
+                    onAvatarTap: _pickAvatar,
+                  ),
+                  Expanded(
+                    child: Container(
+                      width: double.infinity,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFF5F8FC),
+                        borderRadius: BorderRadius.vertical(
+                          top: Radius.circular(28),
                         ),
                       ),
-                      const SizedBox(height: 114),
-                    ],
+                      child: profile.isLoading && profile.profile.isEmpty
+                          ? const Center(
+                              child: CircularProgressIndicator(color: _purple),
+                            )
+                          : SingleChildScrollView(
+                              controller: _pageScrollController,
+                              keyboardDismissBehavior:
+                                  ScrollViewKeyboardDismissBehavior.onDrag,
+                              padding: EdgeInsets.fromLTRB(
+                                18,
+                                20,
+                                18,
+                                28 + MediaQuery.viewInsetsOf(context).bottom,
+                              ),
+                              child: Center(
+                                child: ConstrainedBox(
+                                  constraints: const BoxConstraints(
+                                    maxWidth: 620,
+                                  ),
+                                  child: _profileForm(profile),
+                                ),
+                              ),
+                            ),
+                    ),
                   ),
-                ),
-              );
-              return Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(colors: [_cyan, _blue]),
-                ),
-                child: SingleChildScrollView(
-                  controller: _pageScrollController,
-                  primary: false,
-                  keyboardDismissBehavior:
-                      ScrollViewKeyboardDismissBehavior.onDrag,
-                  padding: EdgeInsets.only(bottom: keyboardInset),
-                  child: canvas,
-                ),
-              );
-            },
+                ],
+              ),
+            ),
           );
         },
       ),
     );
   }
 
-  Widget _profileForm(ProfileProvider profile, {required bool spreadFields}) {
-    if (profile.isLoading && profile.profile.isEmpty) {
-      return const Center(child: CircularProgressIndicator(color: _purple));
-    }
+  Widget _profileForm(ProfileProvider profile) {
     return Form(
       key: _formKey,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(43, 10, 43, 24),
-        child: Column(
-          mainAxisAlignment: spreadFields
-              ? MainAxisAlignment.spaceEvenly
-              : MainAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(child: _field('First Name', _first, required: true)),
-                const SizedBox(width: 19),
-                Expanded(child: _field('Last Name', _last, required: true)),
-              ],
-            ),
-            Row(
-              children: [
-                Expanded(child: _field('Middle Name', _middle)),
-                const SizedBox(width: 19),
-                Expanded(child: _field('Gender', _gender)),
-              ],
-            ),
-            Row(
-              children: [
-                Expanded(child: _field('Age', _age, number: true)),
-                const SizedBox(width: 19),
-                Expanded(
-                  child: _field('Birthday', _birthday, onTap: _pickBirthday),
-                ),
-              ],
-            ),
-            _field('Barangay Address', _address, required: true),
-            _field('Email Address', _email, readOnly: true),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                Expanded(child: _field('Contact No.', _phone, phone: true)),
-                const SizedBox(width: 19),
-                if (_editing)
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _ProfileStatusCard(profile: profile),
+          const SizedBox(height: 14),
+          _profileSection(
+            title: 'Personal Information',
+            icon: Icons.badge_outlined,
+            children: [
+              Row(
+                children: [
+                  Expanded(child: _field('First Name', _first, required: true)),
+                  const SizedBox(width: 12),
+                  Expanded(child: _field('Last Name', _last, required: true)),
+                ],
+              ),
+              Row(
+                children: [
+                  Expanded(child: _field('Middle Name', _middle)),
+                  const SizedBox(width: 12),
+                  Expanded(child: _field('Gender', _gender)),
+                ],
+              ),
+              Row(
+                children: [
+                  Expanded(child: _field('Age', _age, number: true)),
+                  const SizedBox(width: 12),
                   Expanded(
-                    child: _ProfileActionButton(
-                      label: 'Apply Changes',
-                      loading: profile.isSaving,
-                      onPressed: () => _applyChanges(profile),
-                    ),
-                  )
-                else if (!profile.isVerified)
-                  Expanded(
-                    child: _ProfileActionButton(
-                      label: profile.status == 'pending'
-                          ? 'Submit Verification'
-                          : 'Submit Verification',
-                      loading: profile.isSaving,
-                      onPressed: () => _requestVerification(profile),
-                    ),
+                    child: _field('Birthday', _birthday, onTap: _pickBirthday),
                   ),
-              ],
-            ),
-            if (profile.errorMessage != null) ...[
-              const SizedBox(height: 10),
-              Text(
-                profile.errorMessage!,
-                style: const TextStyle(color: Colors.red, fontSize: 11),
+                ],
               ),
             ],
+          ),
+          const SizedBox(height: 14),
+          _profileSection(
+            title: 'Contact Information',
+            icon: Icons.contact_phone_outlined,
+            children: [
+              _field('Barangay Address', _address, required: true),
+              _field('Email Address', _email, readOnly: true),
+              _field('Contact No.', _phone, phone: true),
+            ],
+          ),
+          if (!profile.isVerified && profile.avatarUrl == null) ...[
+            const SizedBox(height: 14),
+            const _PhotoRequirementNotice(),
           ],
-        ),
+          if (profile.errorMessage != null) ...[
+            const SizedBox(height: 12),
+            _InlineProfileError(message: profile.errorMessage!),
+          ],
+          const SizedBox(height: 18),
+          if (_editing) ...[
+            _ProfileActionButton(
+              label: 'Apply Changes',
+              loading: profile.isSaving,
+              onPressed: () => _applyChanges(profile),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton(
+              onPressed: profile.isSaving ? null : _cancelEditing,
+              child: const Text('Cancel'),
+            ),
+          ] else if (!profile.isVerified)
+            _ProfileActionButton(
+              label: profile.isVerificationPending
+                  ? 'Pending Verification'
+                  : 'Submit Verification',
+              loading: profile.isSaving,
+              onPressed: profile.isVerificationPending
+                  ? null
+                  : () => _requestVerification(profile),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _profileSection({
+    required String title,
+    required IconData icon,
+    required List<Widget> children,
+  }) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFDDE5EF)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0C0B1F3A),
+            blurRadius: 18,
+            offset: Offset(0, 7),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEAF2FF),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, color: _blue, size: 20),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          ...children,
+        ],
       ),
     );
   }
@@ -309,7 +423,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     VoidCallback? onTap,
   }) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: 12),
       child: TextFormField(
         controller: controller,
         scrollPadding: const EdgeInsets.only(bottom: 140),
@@ -326,26 +440,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
         validator: required
             ? (value) => value?.trim().isEmpty ?? true ? 'Required' : null
             : null,
-        style: const TextStyle(color: _ink, fontSize: 12),
+        style: const TextStyle(
+          color: _ink,
+          fontSize: 13,
+          fontWeight: FontWeight.w600,
+        ),
         decoration: InputDecoration(
           labelText: label,
           floatingLabelBehavior: FloatingLabelBehavior.always,
-          labelStyle: const TextStyle(color: _ink, fontSize: 11),
+          labelStyle: const TextStyle(
+            color: Color(0xFF5F6672),
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
           isDense: true,
           filled: true,
           fillColor: Colors.white,
           contentPadding: const EdgeInsets.symmetric(
-            horizontal: 10,
-            vertical: 9,
+            horizontal: 13,
+            vertical: 13,
           ),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
           enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: _ink),
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Color(0xFFD7E0EB)),
           ),
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: _blue, width: 1.5),
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: _blue, width: 1.8),
+          ),
+          disabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: Color(0xFFD7E0EB)),
           ),
           errorStyle: const TextStyle(fontSize: 9),
         ),
@@ -354,30 +480,148 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 }
 
-class _ProfileBackgroundPainter extends CustomPainter {
-  const _ProfileBackgroundPainter();
+class _ProfileStatusCard extends StatelessWidget {
+  const _ProfileStatusCard({required this.profile});
+
+  final ProfileProvider profile;
 
   @override
-  void paint(Canvas canvas, Size size) {
-    final gradient = Paint()
-      ..shader = const LinearGradient(
-        colors: [_ProfileScreenState._cyan, _ProfileScreenState._blue],
-      ).createShader(Offset.zero & size);
-    canvas.drawRect(Offset.zero & size, gradient);
-    final footerTop = size.height - 114;
-    final white = Path()
-      ..moveTo(size.width * .38, 114)
-      ..lineTo(size.width, 114)
-      ..lineTo(size.width, footerTop - 179)
-      ..lineTo(size.width * .61, footerTop)
-      ..lineTo(0, footerTop)
-      ..lineTo(0, 297)
-      ..close();
-    canvas.drawPath(white, Paint()..color = Colors.white);
+  Widget build(BuildContext context) {
+    final verified = profile.isVerified;
+    final pending = profile.isVerificationPending;
+    final color = verified
+        ? const Color(0xFF18864B)
+        : pending
+        ? const Color(0xFF075EB8)
+        : const Color(0xFF9A6700);
+    return Container(
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        color: verified
+            ? const Color(0xFFE8F7EF)
+            : pending
+            ? const Color(0xFFEAF3FF)
+            : const Color(0xFFFFF7DF),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withValues(alpha: .3)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: .12),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              verified
+                  ? Icons.verified_rounded
+                  : pending
+                  ? Icons.hourglass_top_rounded
+                  : Icons.shield_outlined,
+              color: color,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  verified
+                      ? 'Verified Resident'
+                      : pending
+                      ? 'Pending Verification'
+                      : 'Account Not Verified',
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  verified
+                      ? 'Your identity has been confirmed by HelpHub.'
+                      : pending
+                      ? 'Your profile was submitted and is waiting for administrator review.'
+                      : 'Complete your profile and submit it for administrator review.',
+                  style: const TextStyle(
+                    color: Color(0xFF5F6672),
+                    fontSize: 11,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
+}
+
+class _PhotoRequirementNotice extends StatelessWidget {
+  const _PhotoRequirementNotice();
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1EDFF),
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(
+          color: const Color(0xFF2400B8).withValues(alpha: .25),
+        ),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.add_a_photo_outlined, color: Color(0xFF2400B8)),
+          SizedBox(width: 11),
+          Expanded(
+            child: Text(
+              'A clear profile photo is required before you can submit a verification request.',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InlineProfileError extends StatelessWidget {
+  const _InlineProfileError({required this.message});
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFEDEC),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.error_outline_rounded, color: Colors.red, size: 19),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(color: Colors.red, fontSize: 11),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _ProfileHeader extends StatelessWidget {
@@ -406,6 +650,8 @@ class _ProfileHeader extends StatelessWidget {
       image = FileImage(selectedAvatar!);
     } else if (profile.avatarUrl != null) {
       image = NetworkImage(profile.avatarUrl!);
+    } else {
+      image = const AssetImage('assets/images/default_resident_avatar.png');
     }
     return SizedBox(
       height: 175,
@@ -457,7 +703,6 @@ class _ProfileHeader extends StatelessWidget {
                     radius: 45,
                     backgroundColor: const Color(0xFFE2F8FC),
                     backgroundImage: image,
-                    child: image == null ? const _AvatarPlaceholder() : null,
                   ),
                   if (editing)
                     const Positioned(
@@ -539,84 +784,6 @@ class _ProfileHeader extends StatelessWidget {
   }
 }
 
-class _AvatarPlaceholder extends StatelessWidget {
-  const _AvatarPlaceholder();
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipOval(
-      child: SizedBox(
-        width: 90,
-        height: 90,
-        child: CustomPaint(painter: const _AvatarLandscapePainter()),
-      ),
-    );
-  }
-}
-
-class _AvatarLandscapePainter extends CustomPainter {
-  const _AvatarLandscapePainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    canvas.drawRect(
-      Offset.zero & size,
-      Paint()
-        ..shader = const LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0xFFDDF7FF), Color(0xFFBDEEFF)],
-        ).createShader(Offset.zero & size),
-    );
-    canvas.drawCircle(
-      Offset(size.width * .44, size.height * .25),
-      10,
-      Paint()..color = Colors.white,
-    );
-    canvas.drawCircle(
-      Offset(size.width * .56, size.height * .25),
-      13,
-      Paint()..color = Colors.white,
-    );
-    canvas.drawCircle(
-      Offset(size.width * .68, size.height * .28),
-      8,
-      Paint()..color = Colors.white,
-    );
-    canvas.drawPath(
-      Path()
-        ..moveTo(0, size.height * .73)
-        ..quadraticBezierTo(
-          size.width * .35,
-          size.height * .55,
-          size.width,
-          size.height * .69,
-        )
-        ..lineTo(size.width, size.height)
-        ..lineTo(0, size.height)
-        ..close(),
-      Paint()..color = const Color(0xFF9AC41A),
-    );
-    canvas.drawPath(
-      Path()
-        ..moveTo(0, size.height * .82)
-        ..quadraticBezierTo(
-          size.width * .55,
-          size.height * .64,
-          size.width,
-          size.height * .82,
-        )
-        ..lineTo(size.width, size.height)
-        ..lineTo(0, size.height)
-        ..close(),
-      Paint()..color = const Color(0xFF5D9800),
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
 class _ProfileActionButton extends StatelessWidget {
   const _ProfileActionButton({
     required this.label,
@@ -625,22 +792,26 @@ class _ProfileActionButton extends StatelessWidget {
   });
   final String label;
   final bool loading;
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 34,
+      height: 50,
       child: FilledButton(
         onPressed: loading ? null : onPressed,
         style: FilledButton.styleFrom(
           backgroundColor: _ProfileScreenState._purple,
           foregroundColor: Colors.white,
+          disabledBackgroundColor: loading
+              ? _ProfileScreenState._purple.withValues(alpha: .72)
+              : const Color(0xFFEAF3FF),
+          disabledForegroundColor: const Color(0xFF075EB8),
           padding: const EdgeInsets.symmetric(horizontal: 8),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
           ),
-          textStyle: const TextStyle(fontSize: 10),
+          textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
         ),
         child: loading
             ? const SizedBox.square(

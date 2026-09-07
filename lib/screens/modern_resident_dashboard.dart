@@ -30,11 +30,93 @@ class _ModernResidentDashboardState extends State<ModernResidentDashboard> {
   }
 
   Future<void> _refresh() async {
+    final profile = context.read<ProfileProvider>();
     await Future.wait([
-      context.read<ReportProvider>().fetchMyReports(),
+      profile.loadProfile(),
       context.read<AdminProvider>().fetchAnnouncements(),
-      context.read<ProfileProvider>().loadProfile(),
     ]);
+    if (!mounted) return;
+    if (profile.isVerified) {
+      await context.read<ReportProvider>().fetchMyReports();
+    } else {
+      context.read<ReportProvider>().clearMyReports();
+    }
+  }
+
+  void _openProtectedFeature(
+    ProfileProvider profile,
+    String route,
+    String featureName,
+  ) {
+    if (profile.isVerified) {
+      Navigator.pushNamed(context, route);
+      return;
+    }
+    final isSos = route == '/emergency_sos';
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        icon: Container(
+          width: 64,
+          height: 64,
+          decoration: BoxDecoration(
+            color: (isSos ? _red : _purple).withValues(alpha: .1),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(
+            isSos ? Icons.sos_rounded : Icons.lock_person_outlined,
+            color: isSos ? _red : _purple,
+            size: 34,
+          ),
+        ),
+        title: Text(
+          isSos ? 'SOS is locked' : '$featureName is locked',
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+        ),
+        content: Text(
+          isSos
+              ? 'You cannot use Emergency SOS until your resident account has been verified. Please submit or check your verification request in your profile.'
+              : 'You cannot open $featureName until your resident account has been verified. Please submit or check your verification request in your profile.',
+          textAlign: TextAlign.center,
+          style: const TextStyle(color: Colors.black54, height: 1.45),
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(20, 0, 20, 18),
+        actions: [
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _purple,
+                    side: const BorderSide(color: _purple),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  child: const Text('Close'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: FilledButton(
+                  onPressed: () {
+                    Navigator.pop(dialogContext);
+                    Navigator.pushNamed(context, '/profile');
+                  },
+                  style: FilledButton.styleFrom(
+                    backgroundColor: _purple,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  child: const Text('View Profile'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -51,9 +133,6 @@ class _ModernResidentDashboardState extends State<ModernResidentDashboard> {
         color: _blue,
         child: LayoutBuilder(
           builder: (context, constraints) {
-            final extraHeight = (constraints.maxHeight - 640)
-                .clamp(0.0, 220.0)
-                .toDouble();
             return SingleChildScrollView(
               physics: const AlwaysScrollableScrollPhysics(),
               child: ConstrainedBox(
@@ -76,26 +155,35 @@ class _ModernResidentDashboardState extends State<ModernResidentDashboard> {
                       ),
                       _WelcomeCard(
                         name: _firstName(profile.fullName, auth.userName),
+                        isVerified: profile.isVerified,
                       ),
-                      SizedBox(height: 25 + (extraHeight * .10)),
+                      if (!profile.isVerified)
+                        _DashboardVerificationBanner(
+                          onTap: () => Navigator.pushNamed(context, '/profile'),
+                        ),
+                      const SizedBox(height: 22),
                       Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 34),
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
                         child: GridView.count(
                           shrinkWrap: true,
                           physics: const NeverScrollableScrollPhysics(),
                           crossAxisCount: 2,
-                          crossAxisSpacing: 7,
-                          mainAxisSpacing: 10,
-                          childAspectRatio: 1.87,
+                          crossAxisSpacing: 12,
+                          mainAxisSpacing: 12,
+                          childAspectRatio: constraints.maxWidth < 360
+                              ? 1.12
+                              : 1.25,
                           children:
                               [
                                     _ActionCard(
                                       title: 'Report Concern',
                                       subtitle: 'Submit a new concern',
                                       icon: Icons.assignment_add,
-                                      onTap: () => Navigator.pushNamed(
-                                        context,
+                                      locked: !profile.isVerified,
+                                      onTap: () => _openProtectedFeature(
+                                        profile,
                                         '/report_concern',
+                                        'Report Concern',
                                       ),
                                     ),
                                     _ActionCard(
@@ -103,9 +191,11 @@ class _ModernResidentDashboardState extends State<ModernResidentDashboard> {
                                       subtitle: 'View submitted concerns',
                                       icon: Icons.fact_check_outlined,
                                       badge: reports.activeReportsCount,
-                                      onTap: () => Navigator.pushNamed(
-                                        context,
+                                      locked: !profile.isVerified,
+                                      onTap: () => _openProtectedFeature(
+                                        profile,
                                         '/report_tracking',
+                                        'My Reports',
                                       ),
                                     ),
                                     _ActionCard(
@@ -126,9 +216,11 @@ class _ModernResidentDashboardState extends State<ModernResidentDashboard> {
                                       subtitle: 'Get immediate help',
                                       icon: Icons.sos_rounded,
                                       emergency: true,
-                                      onTap: () => Navigator.pushNamed(
-                                        context,
+                                      locked: !profile.isVerified,
+                                      onTap: () => _openProtectedFeature(
+                                        profile,
                                         '/emergency_sos',
+                                        'Emergency SOS',
                                       ),
                                     ),
                                   ]
@@ -137,41 +229,54 @@ class _ModernResidentDashboardState extends State<ModernResidentDashboard> {
                                   .scale(begin: const Offset(.96, .96)),
                         ),
                       ),
-                      SizedBox(height: 15 + (extraHeight * .07)),
+                      const SizedBox(height: 24),
                       Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 27),
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             const Text(
                               'Recent Reports',
                               style: TextStyle(
-                                fontSize: 12,
+                                fontSize: 16,
                                 fontWeight: FontWeight.w800,
+                                color: _ink,
                               ),
                             ),
                             TextButton(
-                              onPressed: () => Navigator.pushNamed(
-                                context,
+                              onPressed: () => _openProtectedFeature(
+                                profile,
                                 '/report_tracking',
+                                'My Reports',
                               ),
                               style: TextButton.styleFrom(
                                 foregroundColor: _purple,
-                                minimumSize: const Size(0, 30),
-                                padding: EdgeInsets.zero,
+                                minimumSize: const Size(0, 38),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                ),
                                 textStyle: const TextStyle(
-                                  fontSize: 10,
+                                  fontSize: 12,
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
-                              child: const Text('View all'),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text('View all'),
+                                  SizedBox(width: 2),
+                                  Icon(Icons.arrow_forward_rounded, size: 15),
+                                ],
+                              ),
                             ),
                           ],
                         ),
                       ),
                       Padding(
-                        padding: const EdgeInsets.fromLTRB(37, 0, 30, 34),
-                        child: _recentReports(reports),
+                        padding: const EdgeInsets.fromLTRB(20, 4, 20, 128),
+                        child: profile.isVerified
+                            ? _recentReports(reports)
+                            : const _VerificationNotice(),
                       ),
                     ],
                   ),
@@ -276,45 +381,81 @@ class _DashboardHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 105,
+      height: 112,
       child: SafeArea(
         bottom: false,
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 6, 20, 0),
+          padding: const EdgeInsets.fromLTRB(20, 8, 16, 8),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Image.asset(
-                'assets/images/helphub_crest.png',
-                width: 60,
-                height: 62,
-                fit: BoxFit.contain,
-                filterQuality: FilterQuality.high,
+              Row(
+                children: [
+                  Image.asset(
+                    'assets/images/helphub_crest.png',
+                    width: 54,
+                    height: 58,
+                    fit: BoxFit.contain,
+                    filterQuality: FilterQuality.high,
+                  ),
+                  const SizedBox(width: 8),
+                  const Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'HelpHub',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 19,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: -.3,
+                        ),
+                      ),
+                      Text(
+                        'Resident portal',
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
               const Spacer(),
-              IconButton(
-                onPressed: onNotifications,
-                icon: const Icon(
-                  Icons.notifications_rounded,
-                  color: _ModernResidentDashboardState._purple,
+              _HeaderCircleButton(
+                onTap: onNotifications,
+                child: const Icon(
+                  Icons.notifications_none_rounded,
+                  color: Colors.white,
+                  size: 22,
                 ),
               ),
-              IconButton(
-                onPressed: onProfile,
-                tooltip: 'Your profile',
-                icon: CircleAvatar(
-                  radius: 13,
-                  backgroundColor: _ModernResidentDashboardState._purple,
-                  backgroundImage: profile.avatarUrl == null
-                      ? null
-                      : NetworkImage(profile.avatarUrl!),
-                  child: profile.avatarUrl == null
-                      ? const Icon(
-                          Icons.person_rounded,
-                          color: Colors.white,
-                          size: 18,
-                        )
-                      : null,
+              const SizedBox(width: 10),
+              Semantics(
+                button: true,
+                label: 'Your profile',
+                child: InkWell(
+                  onTap: onProfile,
+                  borderRadius: BorderRadius.circular(24),
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 2),
+                    ),
+                    child: CircleAvatar(
+                      radius: 18,
+                      backgroundColor: Colors.white,
+                      backgroundImage: profile.avatarUrl == null
+                          ? const AssetImage(
+                              'assets/images/default_resident_avatar.png',
+                            )
+                          : NetworkImage(profile.avatarUrl!),
+                    ),
+                  ),
                 ),
               ),
             ],
@@ -325,21 +466,49 @@ class _DashboardHeader extends StatelessWidget {
   }
 }
 
+class _HeaderCircleButton extends StatelessWidget {
+  const _HeaderCircleButton({required this.onTap, required this.child});
+
+  final VoidCallback onTap;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white.withValues(alpha: .16),
+      shape: const CircleBorder(),
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const CircleBorder(),
+        child: SizedBox(width: 42, height: 42, child: Center(child: child)),
+      ),
+    );
+  }
+}
+
 class _WelcomeCard extends StatelessWidget {
-  const _WelcomeCard({required this.name});
+  const _WelcomeCard({required this.name, required this.isVerified});
   final String name;
+  final bool isVerified;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 88,
-      margin: const EdgeInsets.symmetric(horizontal: 12),
-      padding: const EdgeInsets.fromLTRB(14, 17, 14, 12),
+      height: 112,
+      margin: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.fromLTRB(18, 18, 12, 16),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
           colors: [Color(0xFF2600B7), Color(0xFF2200CB)],
         ),
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF2400B8).withValues(alpha: .24),
+            blurRadius: 24,
+            offset: const Offset(0, 10),
+          ),
+        ],
       ),
       child: Row(
         children: [
@@ -353,22 +522,51 @@ class _WelcomeCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 17,
+                    fontSize: 20,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 5),
                 const Text(
-                  'Manage your concern and stay updated',
-                  style: TextStyle(color: Colors.white, fontSize: 11),
+                  'Stay informed. Report concerns.\nHelp keep your community safe.',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 11,
+                    height: 1.35,
+                  ),
+                ),
+                const Spacer(),
+                Row(
+                  children: [
+                    Icon(
+                      isVerified
+                          ? Icons.verified_rounded
+                          : Icons.schedule_rounded,
+                      color: isVerified
+                          ? const Color(0xFF67E8F9)
+                          : Colors.white70,
+                      size: 14,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      isVerified
+                          ? 'Verified resident'
+                          : 'Verification required',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
           Image.asset(
             'assets/images/community_line_art.png',
-            width: 92,
-            height: 70,
+            width: 98,
+            height: 82,
             fit: BoxFit.contain,
             filterQuality: FilterQuality.high,
           ),
@@ -386,6 +584,7 @@ class _ActionCard extends StatelessWidget {
     required this.onTap,
     this.emergency = false,
     this.badge = 0,
+    this.locked = false,
   });
   final String title;
   final String subtitle;
@@ -393,6 +592,7 @@ class _ActionCard extends StatelessWidget {
   final VoidCallback onTap;
   final bool emergency;
   final int badge;
+  final bool locked;
 
   @override
   Widget build(BuildContext context) {
@@ -400,59 +600,222 @@ class _ActionCard extends StatelessWidget {
         ? _ModernResidentDashboardState._red
         : _ModernResidentDashboardState._purple;
     return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(10),
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(18),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(18),
         child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: color, width: 1.8),
+            color: emergency ? const Color(0xFFFFF6F6) : Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: color.withValues(alpha: .55), width: 1.2),
+            boxShadow: [
+              BoxShadow(
+                color: color.withValues(alpha: .10),
+                blurRadius: 16,
+                offset: const Offset(0, 6),
+              ),
+            ],
           ),
           child: Stack(
             children: [
-              Center(
+              Align(
+                alignment: Alignment.centerLeft,
                 child: Column(
-                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(icon, color: color, size: emergency ? 33 : 35),
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: color.withValues(alpha: .10),
+                        borderRadius: BorderRadius.circular(13),
+                      ),
+                      child: Icon(icon, color: color, size: 27),
+                    ),
+                    const SizedBox(height: 8),
                     Text(
                       title,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: 11,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: emergency ? color : const Color(0xFF121A2B),
+                        fontSize: 13,
                         fontWeight: FontWeight.w800,
                       ),
                     ),
+                    const SizedBox(height: 2),
                     Text(
                       subtitle,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 9),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF6B7280),
+                        fontSize: 9,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ],
                 ),
               ),
               if (badge > 0)
                 Positioned(
-                  right: 6,
-                  top: 5,
-                  child: CircleAvatar(
-                    radius: 8,
-                    backgroundColor: color,
+                  right: 0,
+                  top: 0,
+                  child: Container(
+                    constraints: const BoxConstraints(
+                      minWidth: 23,
+                      minHeight: 23,
+                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    decoration: BoxDecoration(
+                      color: color,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                     child: Text(
                       badge > 9 ? '9+' : '$badge',
+                      textAlign: TextAlign.center,
                       style: const TextStyle(
                         color: Colors.white,
-                        fontSize: 7,
+                        fontSize: 10,
                         fontWeight: FontWeight.w800,
                       ),
+                    ),
+                  ),
+                ),
+              if (locked)
+                Positioned(
+                  right: 0,
+                  top: 0,
+                  child: Container(
+                    width: 25,
+                    height: 25,
+                    decoration: BoxDecoration(
+                      color: color,
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.lock_rounded,
+                      color: Colors.white,
+                      size: 14,
                     ),
                   ),
                 ),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _DashboardVerificationBanner extends StatelessWidget {
+  const _DashboardVerificationBanner({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+      child: Material(
+        color: const Color(0xFFF2F7FF),
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: const Color(0xFF075EB8).withValues(alpha: .18),
+              ),
+            ),
+            child: const Row(
+              children: [
+                CircleAvatar(
+                  radius: 19,
+                  backgroundColor: Color(0xFFE0ECFF),
+                  child: Icon(
+                    Icons.verified_user_outlined,
+                    color: Color(0xFF075EB8),
+                    size: 21,
+                  ),
+                ),
+                SizedBox(width: 11),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Complete your verification',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        'Unlock reports and Emergency SOS',
+                        style: TextStyle(
+                          color: Color(0xFF667085),
+                          fontSize: 10,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(Icons.chevron_right_rounded, color: Color(0xFF075EB8)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    ).animate().fade().slideY(begin: -.08);
+  }
+}
+
+class _VerificationNotice extends StatelessWidget {
+  const _VerificationNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: const Color(0xFF2400B8).withValues(alpha: .3),
+        ),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0D2400B8),
+            blurRadius: 14,
+            offset: Offset(0, 5),
+          ),
+        ],
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.verified_user_outlined, color: Color(0xFF2400B8)),
+          SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Your recent reports will appear here after your account is verified.',
+              style: TextStyle(
+                fontSize: 11,
+                height: 1.35,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -466,51 +829,84 @@ class _RecentReportCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final status = (report['status'] ?? 'submitted').toString();
     final statusData = _status(status);
+    final category =
+        (report['concern_types']?['category_name'] ?? 'Community report')
+            .toString();
+    final title = (report['title'] ?? report['description'] ?? category)
+        .toString();
     return Container(
-      height: 49,
-      margin: const EdgeInsets.only(bottom: 5),
-      padding: const EdgeInsets.symmetric(horizontal: 10),
+      constraints: const BoxConstraints(minHeight: 74),
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: _ModernResidentDashboardState._ink),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0F0F2765),
+            blurRadius: 14,
+            offset: Offset(0, 5),
+          ),
+        ],
       ),
       child: Row(
         children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: statusData.$1.withValues(alpha: .10),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(
+              Icons.description_outlined,
+              color: statusData.$1,
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 11),
           Expanded(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  (report['title'] ?? 'Community concern').toString(),
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF182230),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  category,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontSize: 10,
-                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF667085),
                   ),
-                ),
-                Text(
-                  (report['concern_types']?['category_name'] ?? 'Report')
-                      .toString(),
-                  style: const TextStyle(fontSize: 8, color: Colors.black54),
                 ),
               ],
             ),
           ),
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
             decoration: BoxDecoration(
-              border: Border.all(color: statusData.$1),
+              color: statusData.$1.withValues(alpha: .08),
+              border: Border.all(color: statusData.$1.withValues(alpha: .55)),
               borderRadius: BorderRadius.circular(9),
             ),
             child: Text(
               statusData.$2,
               style: TextStyle(
                 color: statusData.$1,
-                fontSize: 7,
-                fontWeight: FontWeight.w700,
+                fontSize: 8,
+                fontWeight: FontWeight.w800,
               ),
             ),
           ),
@@ -541,11 +937,11 @@ class _ReportSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-          height: 49,
-          margin: const EdgeInsets.only(bottom: 5),
+          height: 74,
+          margin: const EdgeInsets.only(bottom: 10),
           decoration: BoxDecoration(
             color: const Color(0xFFE9EEF5),
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(16),
           ),
         )
         .animate(onPlay: (controller) => controller.repeat(reverse: true))

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 enum AuthState {
@@ -14,7 +15,10 @@ enum AuthState {
 enum UserRole { guest, resident, admin }
 
 class AuthProvider extends ChangeNotifier {
+  static const _autoSaveAccountKey = 'helphub_auto_save_account';
+
   final _supabase = Supabase.instance.client;
+  final _preferences = SharedPreferencesAsync();
 
   AuthState _state = AuthState.initial;
   UserRole _role = UserRole.guest;
@@ -36,28 +40,7 @@ class AuthProvider extends ChangeNotifier {
 
       final user = res.user;
       if (user != null) {
-        // Fetch role from profiles table
-        final profile = await _supabase
-            .from('profiles')
-            .select()
-            .eq('id', user.id)
-            .single();
-
-        if (profile['status'] == 'rejected') {
-          _errorMessage = 'This account verification request was rejected.';
-          await _supabase.auth.signOut();
-          _setState(AuthState.denied);
-          return;
-        }
-
-        if (profile['role'] == 'admin') {
-          _role = UserRole.admin;
-        } else {
-          _role = UserRole.resident;
-        }
-
-        _userName = profile['full_name'] ?? email;
-        _setState(AuthState.authenticated);
+        await _loadAuthenticatedUser(user, fallbackName: email);
       }
     } on AuthException catch (e) {
       _errorMessage = e.message;
@@ -67,6 +50,59 @@ class AuthProvider extends ChangeNotifier {
           'Database connection failure. Have you run the SQL script?';
       _setState(AuthState.error);
     }
+  }
+
+  Future<bool> restoreSavedAccount() async {
+    final enabled = await _preferences.getBool(_autoSaveAccountKey) ?? false;
+    if (!enabled) return false;
+
+    final user = _supabase.auth.currentUser;
+    if (user == null) {
+      await _preferences.remove(_autoSaveAccountKey);
+      return false;
+    }
+
+    _setState(AuthState.loading);
+    try {
+      await _loadAuthenticatedUser(
+        user,
+        fallbackName: user.email ?? 'Resident',
+      );
+      return _state == AuthState.authenticated;
+    } catch (_) {
+      await _preferences.remove(_autoSaveAccountKey);
+      _errorMessage = 'Your saved session expired. Please log in again.';
+      _setState(AuthState.sessionExpired);
+      return false;
+    }
+  }
+
+  Future<void> setAutoSaveAccount(bool enabled) async {
+    await _preferences.setBool(_autoSaveAccountKey, enabled);
+  }
+
+  Future<void> _loadAuthenticatedUser(
+    User user, {
+    required String fallbackName,
+  }) async {
+    final profile = await _supabase
+        .from('profiles')
+        .select()
+        .eq('id', user.id)
+        .single();
+
+    if (profile['status'] == 'rejected') {
+      _errorMessage = 'This account verification request was rejected.';
+      await _preferences.remove(_autoSaveAccountKey);
+      await _supabase.auth.signOut();
+      _setState(AuthState.denied);
+      return;
+    }
+
+    _role = profile['role'] == 'admin' ? UserRole.admin : UserRole.resident;
+    _userName = profile['full_name'] ?? fallbackName;
+    _errorMessage = null;
+    _setState(AuthState.authenticated);
   }
 
   Future<bool> register(
@@ -114,16 +150,32 @@ class AuthProvider extends ChangeNotifier {
       }
 
       if (res.user != null) {
-        // Update profile
-        await _supabase
-            .from('profiles')
-            .update({
-              'full_name': fullName,
-              'phone': phone.isEmpty ? null : phone,
-              'address': address.isEmpty ? null : address,
-              'status': 'pending',
-            })
-            .eq('id', res.user!.id);
+        final basicProfile = <String, dynamic>{
+          'full_name': fullName,
+          'phone': phone.isEmpty ? null : phone,
+          'address': address.isEmpty ? null : address,
+          'status': 'pending',
+        };
+        try {
+          await _supabase
+              .from('profiles')
+              .update({
+                ...basicProfile,
+                'email': trimmedEmail.isEmpty ? null : trimmedEmail,
+                'first_name': firstName,
+                'middle_name': middleName,
+                'last_name': lastName,
+                'age': age,
+                'birthday': birthday?.toIso8601String().split('T').first,
+              })
+              .eq('id', res.user!.id);
+        } on PostgrestException {
+          // Compatibility fallback until the profile-details migration is run.
+          await _supabase
+              .from('profiles')
+              .update(basicProfile)
+              .eq('id', res.user!.id);
+        }
 
         _errorMessage =
             'Registration successful! Wait for admin approval to log in.';
@@ -164,6 +216,7 @@ class AuthProvider extends ChangeNotifier {
       debugPrint('Unable to unregister push token during logout: $error');
     }
     await _supabase.auth.signOut();
+    await _preferences.remove(_autoSaveAccountKey);
     _role = UserRole.guest;
     _userName = null;
     _setState(AuthState.initial);

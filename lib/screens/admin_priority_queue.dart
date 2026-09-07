@@ -111,17 +111,42 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
     return Scaffold(
       appBar: AppBar(
         toolbarHeight: 68,
-        title: const Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        titleSpacing: 4,
+        title: Row(
           children: [
-            Text('Priority queue'),
-            SizedBox(height: 2),
-            Text(
-              'Community response command',
-              style: TextStyle(
-                color: Colors.white60,
-                fontSize: 11,
-                fontWeight: FontWeight.w500,
+            Container(
+              width: 42,
+              height: 42,
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Image.asset(
+                'assets/images/helphub_crest.png',
+                fit: BoxFit.contain,
+                filterQuality: FilterQuality.high,
+              ),
+            ),
+            const SizedBox(width: 10),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('Priority queue'),
+                  SizedBox(height: 2),
+                  Text(
+                    'Community response command',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white60,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
               ),
             ),
           ],

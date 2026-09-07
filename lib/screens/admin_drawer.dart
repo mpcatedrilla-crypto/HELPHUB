@@ -42,17 +42,18 @@ class AdminDrawer extends StatelessWidget {
               child: Row(
                 children: [
                   Container(
-                    width: 48,
-                    height: 48,
+                    width: 56,
+                    height: 56,
+                    padding: const EdgeInsets.all(5),
                     decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.14),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: Colors.white24),
-                    ),
-                    child: const Icon(
-                      Icons.health_and_safety_rounded,
                       color: Colors.white,
-                      size: 27,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.white54),
+                    ),
+                    child: Image.asset(
+                      'assets/images/helphub_crest.png',
+                      fit: BoxFit.contain,
+                      filterQuality: FilterQuality.high,
                     ),
                   ),
                   const SizedBox(width: 13),
@@ -149,6 +150,13 @@ class AdminDrawer extends StatelessWidget {
               selected: route == '/admin_audit_logs',
               onTap: () =>
                   Navigator.pushReplacementNamed(context, '/admin_audit_logs'),
+            ),
+            _DrawerTile(
+              icon: Icons.account_circle_rounded,
+              label: 'Administrator profile',
+              selected: route == '/admin_profile',
+              onTap: () =>
+                  Navigator.pushReplacementNamed(context, '/admin_profile'),
             ),
             const Spacer(),
             const Padding(
