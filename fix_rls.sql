@@ -1,9 +1,26 @@
--- Allow Admins to update reports (so they can resolve/acknowledge them)
-CREATE POLICY "Admins can update all reports" ON reports FOR UPDATE USING (
-  EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role = 'admin' AND status = 'approved')
-);
+-- Legacy one-off helper. Prefer migration
+-- 202609080003_admin_owned_report_resolution.sql.
 
--- Allow Residents to update their own reports (e.g. to confirm resolution or cancel)
-CREATE POLICY "Residents can update own reports" ON reports FOR UPDATE USING (
-  resident_id = auth.uid()
+DROP POLICY IF EXISTS "Residents can update own reports" ON public.reports;
+DROP POLICY IF EXISTS "Admins can update all reports" ON public.reports;
+
+CREATE POLICY "Approved admins can update reports"
+ON public.reports
+FOR UPDATE
+TO authenticated
+USING (
+  EXISTS (
+    SELECT 1 FROM public.profiles
+    WHERE profiles.id = auth.uid()
+      AND profiles.role = 'admin'
+      AND profiles.status = 'approved'
+  )
+)
+WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM public.profiles
+    WHERE profiles.id = auth.uid()
+      AND profiles.role = 'admin'
+      AND profiles.status = 'approved'
+  )
 );

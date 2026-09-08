@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import '../models/report_status.dart';
+
 class ReportProvider extends ChangeNotifier {
   final _supabase = Supabase.instance.client;
 
@@ -14,33 +16,6 @@ class ReportProvider extends ChangeNotifier {
   List<Map<String, dynamic>> _concernTypes = [];
   String? _lastSubmittedReportId;
 
-  RealtimeChannel? _reportsSubscription;
-
-  ReportProvider() {
-    _initializeRealtime();
-  }
-
-  void _initializeRealtime() {
-    _reportsSubscription = _supabase
-        .channel('reports_sync')
-        .onPostgresChanges(
-          event: PostgresChangeEvent.all,
-          schema: 'public',
-          table: 'reports',
-          callback: (payload) {
-            fetchAllReports();
-            fetchMyReports();
-          },
-        )
-        .subscribe();
-  }
-
-  @override
-  void dispose() {
-    _reportsSubscription?.unsubscribe();
-    super.dispose();
-  }
-
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
   List<Map<String, dynamic>> get myReports => _myReports;
@@ -49,10 +24,25 @@ class ReportProvider extends ChangeNotifier {
   String? get lastSubmittedReportId => _lastSubmittedReportId;
 
   // Derived metrics for Dashboard
-  int get activeReportsCount =>
-      _myReports.where((r) => r['status'] != 'resolved').length;
-  int get resolvedReportsCount =>
-      _myReports.where((r) => r['status'] == 'resolved').length;
+  int get totalReportsCount => _myReports.length;
+
+  int get activeReportsCount => _myReports
+      .where((r) => ReportStatus.fromDatabase(r['status']).isActive)
+      .length;
+
+  // Keep this metric literal: only reports currently marked resolved belong in
+  // a "Resolved" count. Closed, referred, and false-alarm reports are distinct
+  // outcomes in the canonical lifecycle.
+  int get resolvedReportsCount => _myReports
+      .where(
+        (r) => ReportStatus.fromDatabase(r['status']) == ReportStatus.resolved,
+      )
+      .length;
+
+  int get completedReportsCount => _myReports.where((r) {
+    final status = ReportStatus.fromDatabase(r['status']);
+    return status.isCompleted || status == ReportStatus.archived;
+  }).length;
 
   void clearMyReports() {
     if (_myReports.isEmpty) return;
@@ -167,7 +157,7 @@ class ReportProvider extends ChangeNotifier {
             'vulnerable_groups': vulnerableGroups,
             'is_critical_override': isEmergency,
             'priority_score': score,
-            'status': 'submitted',
+            'status': ReportStatus.submitted.dbValue,
             'address_notes': addressNotes, // Optional textual address
           })
           .select('id')
@@ -247,11 +237,14 @@ class ReportProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> updateReportStatus(String reportId, String newStatus) async {
+  Future<bool> updateReportStatus(
+    String reportId,
+    ReportStatus newStatus,
+  ) async {
     try {
       final response = await _supabase
           .from('reports')
-          .update({'status': newStatus})
+          .update({'status': newStatus.dbValue})
           .eq('id', reportId)
           .select();
 
@@ -266,7 +259,7 @@ class ReportProvider extends ChangeNotifier {
           'action': 'STATUS_CHANGE',
           'target_table': 'reports',
           'target_id': reportId,
-          'changes': {'new_status': newStatus},
+          'changes': {'new_status': newStatus.dbValue},
         });
       } catch (e) {
         debugPrint('Failed to log audit event: $e');
@@ -300,7 +293,7 @@ class ReportProvider extends ChangeNotifier {
       final response = await _supabase
           .from('reports')
           .update({
-            'status': 'resolved',
+            'status': ReportStatus.resolved.dbValue,
             'admin_resolution_notes': notes.trim(),
             'admin_proof_url': proofUrl,
           })
@@ -319,7 +312,7 @@ class ReportProvider extends ChangeNotifier {
           'target_table': 'reports',
           'target_id': reportId,
           'changes': {
-            'status': 'resolved',
+            'status': ReportStatus.resolved.dbValue,
             'has_resolution_notes': notes.trim().isNotEmpty,
             'has_proof_image': proofUrl != null,
           },

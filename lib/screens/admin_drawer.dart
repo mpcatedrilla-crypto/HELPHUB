@@ -41,15 +41,9 @@ class AdminDrawer extends StatelessWidget {
               ),
               child: Row(
                 children: [
-                  Container(
+                  SizedBox(
                     width: 56,
                     height: 56,
-                    padding: const EdgeInsets.all(5),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: Colors.white54),
-                    ),
                     child: Image.asset(
                       'assets/images/helphub_crest.png',
                       fit: BoxFit.contain,

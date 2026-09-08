@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:provider/provider.dart';
 
+import '../models/report_status.dart';
 import '../providers/report_provider.dart';
 
 class ModernReportTracking extends StatefulWidget {
@@ -122,20 +123,18 @@ class _ModernReportTrackingState extends State<ModernReportTracking> {
   }
 
   _StatusStyle _reportStatus(String? rawStatus) {
-    final status = (rawStatus ?? 'submitted').toLowerCase();
-    switch (status) {
-      case 'resolved':
-        return const _StatusStyle('RESOLVED', Color(0xFF4DB848));
-      case 'acknowledged':
-      case 'pending_confirmation':
-      case 'under_review':
-        return const _StatusStyle('ACKNOWLEDGED', Color(0xFFFF7B3A));
-      case 'in_progress':
-      case 'responding':
-        return const _StatusStyle('IN PROGRESS', Color(0xFFF2B72D));
-      default:
-        return const _StatusStyle('SUBMITTED', Color(0xFF3217E6));
-    }
+    final status = ReportStatus.fromDatabase(rawStatus);
+    final color = switch (status) {
+      ReportStatus.resolved => const Color(0xFF4DB848),
+      ReportStatus.acknowledged => const Color(0xFFFF7B3A),
+      ReportStatus.inProgress => const Color(0xFFF2B72D),
+      ReportStatus.referred => const Color(0xFF0891B2),
+      ReportStatus.falseAlarm => const Color(0xFFCE5A0A),
+      ReportStatus.closed => const Color(0xFF64748B),
+      ReportStatus.archived => const Color(0xFF475569),
+      ReportStatus.submitted => const Color(0xFF3217E6),
+    };
+    return _StatusStyle(status.label, color);
   }
 
   void _showReportDetails(

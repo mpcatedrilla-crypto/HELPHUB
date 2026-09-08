@@ -5,6 +5,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import '../providers/auth_provider.dart';
 import '../providers/report_provider.dart';
 import '../providers/admin_provider.dart';
+import '../models/report_status.dart';
 import '../theme/app_theme.dart';
 import 'resident_announcements_screen.dart';
 
@@ -131,7 +132,7 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
                         icon: Icons.list_alt,
                         color: Colors.white,
                         textColor: AppTheme.primaryBlue,
-                        badgeCount: provider.activeReportsCount,
+                        badgeCount: provider.totalReportsCount,
                         onTap: () =>
                             Navigator.pushNamed(context, '/report_tracking'),
                       ),
@@ -192,11 +193,19 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
                       entry,
                     ) {
                       final report = entry.value;
-                      Color statusColor = AppTheme.statusMedium;
-                      if (report['status'] == 'submitted')
-                        statusColor = Colors.orange;
-                      if (report['status'] == 'resolved')
-                        statusColor = AppTheme.statusResolved;
+                      final reportStatus = ReportStatus.fromDatabase(
+                        report['status'],
+                      );
+                      final statusColor = switch (reportStatus) {
+                        ReportStatus.submitted => Colors.orange,
+                        ReportStatus.acknowledged => AppTheme.primaryBlue,
+                        ReportStatus.inProgress => AppTheme.statusProgress,
+                        ReportStatus.resolved => AppTheme.statusResolved,
+                        ReportStatus.referred => AppTheme.statusReferred,
+                        ReportStatus.falseAlarm => AppTheme.statusHigh,
+                        ReportStatus.closed ||
+                        ReportStatus.archived => AppTheme.textSecondary,
+                      };
 
                       return _buildReportListTile(context, report, statusColor)
                           .animate()
@@ -346,7 +355,7 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
                 borderRadius: BorderRadius.circular(20),
               ),
               child: Text(
-                (report['status'] ?? 'Unknown').toUpperCase(),
+                ReportStatus.fromDatabase(report['status']).label,
                 style: TextStyle(
                   color: statusColor,
                   fontWeight: FontWeight.bold,
@@ -387,7 +396,9 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
               ),
             ),
 
-          if (report['status'] == 'pending_confirmation')
+          if (ReportStatus.fromDatabase(report['status']) ==
+                  ReportStatus.resolved &&
+              report['admin_resolution_notes'] != null)
             Container(
               padding: const EdgeInsets.all(12),
               color: Colors.orange.withOpacity(0.1),
@@ -404,23 +415,6 @@ class _ResidentDashboardState extends State<ResidentDashboard> {
                   const SizedBox(height: 8),
                   if (report['admin_proof_url'] != null)
                     Image.network(report['admin_proof_url'], height: 100),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppTheme.statusResolved,
-                        foregroundColor: Colors.white,
-                      ),
-                      onPressed: () {
-                        Provider.of<ReportProvider>(
-                          context,
-                          listen: false,
-                        ).updateReportStatus(report['id'], 'resolved');
-                      },
-                      child: const Text('Confirm Resolution'),
-                    ),
-                  ),
                 ],
               ),
             ),

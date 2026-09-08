@@ -1,4 +1,4 @@
-﻿const jsonHeaders = { 'Content-Type': 'application/json' };
+const jsonHeaders = { 'Content-Type': 'application/json' };
 
 type WebhookPayload = {
   type?: string;
@@ -52,7 +52,7 @@ async function googleAccessToken(): Promise<string> {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: new URLSearchParams({
-      grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+      grant_type: 'urn:ietf:params:oauth-grant-type:jwt-bearer',
       assertion,
     }),
   });
@@ -66,38 +66,31 @@ Deno.serve(async (request) => {
     if (request.method !== 'POST') {
       return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: jsonHeaders });
     }
+    if (request.headers.get('x-webhook-secret') !== env('SOS_WEBHOOK_SECRET')) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401, headers: jsonHeaders });
+    }
 
     const payload = await request.json() as WebhookPayload;
     const report = payload.record ?? {};
-    if (payload.type !== 'INSERT' || payload.table !== 'reports') {
+    if (payload.type !== 'INSERT' || payload.table !== 'reports' || report.is_critical_override !== true) {
       return new Response(JSON.stringify({ skipped: true }), { headers: jsonHeaders });
     }
-
-    const isCritical = report.is_critical_override === true;
 
     const supabaseUrl = env('SUPABASE_URL');
     const serviceKey = env('SUPABASE_SERVICE_ROLE_KEY');
     const tokenResponse = await fetch(`${supabaseUrl}/rest/v1/admin_push_tokens?select=token`, {
       headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` },
     });
-    
     if (!tokenResponse.ok) throw new Error(await tokenResponse.text());
     const deviceRows = await tokenResponse.json() as Array<{ token: string }>;
     if (deviceRows.length === 0) {
-      return new Response(JSON.stringify({ sent: 0, reason: 'no_tokens' }), { headers: jsonHeaders });
+      return new Response(JSON.stringify({ sent: 0 }), { headers: jsonHeaders });
     }
 
     const accessToken = await googleAccessToken();
     const projectId = env('FIREBASE_PROJECT_ID');
-    const title = String(report.title ?? report.emergency_type ?? (isCritical ? 'Emergency SOS' : 'New Report'));
+    const title = String(report.title ?? report.emergency_type ?? 'Emergency SOS');
     const reportId = String(report.id ?? '');
-
-    const notificationTitle = isCritical ? '🚨 CRITICAL SOS ALERT' : 'New Community Report';
-    const channelId = isCritical ? 'emergency_sos_v4' : 'normal_reports_v1';
-    const priority = isCritical ? 'high' : 'normal';
-    const sound = isCritical ? 'siren' : 'default';
-    const dataType = isCritical ? 'critical_sos' : 'normal_report';
-
     const results = await Promise.all(deviceRows.map(async ({ token }) => {
       const response = await fetch(`https://fcm.googleapis.com/v1/projects/${projectId}/messages:send`, {
         method: 'POST',
@@ -108,13 +101,13 @@ Deno.serve(async (request) => {
         body: JSON.stringify({
           message: {
             token,
-            notification: { title: notificationTitle, body: title },
-            data: { type: dataType, report_id: reportId, report_title: title },
+            notification: { title: 'CRITICAL SOS ALERT', body: title },
+            data: { type: 'critical_sos', report_id: reportId, report_title: title },
             android: {
-              priority: priority,
+              priority: 'high',
               notification: {
-                channel_id: channelId,
-                sound: sound,
+                channel_id: 'emergency_sos_v4',
+                sound: 'siren',
                 visibility: 'public',
                 default_vibrate_timings: true,
               },

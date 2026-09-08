@@ -7,6 +7,7 @@ import 'dart:io';
 import 'package:provider/provider.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 
+import '../models/report_status.dart';
 import '../providers/report_provider.dart';
 import '../providers/admin_provider.dart';
 import '../theme/app_theme.dart';
@@ -16,6 +17,8 @@ import 'package:camera/camera.dart';
 
 import 'admin_drawer.dart';
 import 'camera_screen.dart';
+
+enum _UrgencyFilter { all, high, medium, low }
 
 class AdminPriorityQueue extends StatefulWidget {
   const AdminPriorityQueue({super.key});
@@ -27,11 +30,12 @@ class AdminPriorityQueue extends StatefulWidget {
 class _AdminPriorityQueueState extends State<AdminPriorityQueue>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  _UrgencyFilter _selectedUrgency = _UrgencyFilter.all;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final reportProvider = Provider.of<ReportProvider>(
         context,
@@ -40,7 +44,6 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
       final adminProvider = Provider.of<AdminProvider>(context, listen: false);
 
       reportProvider.fetchAllReports();
-      adminProvider.fetchRoutingDestinations();
 
       adminProvider.startListeningForEmergencies(() {
         if (mounted) reportProvider.fetchAllReports();
@@ -59,7 +62,7 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
   }
 
   Map<String, dynamic> _getBadgeInfo(Map<String, dynamic> r) {
-    final score = r['priority_score'] ?? 0;
+    final score = _priorityScore(r);
     final isCritical = r['is_critical_override'] == true;
     Color badgeColor;
     String badgeText;
@@ -86,6 +89,24 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
     return {'color': badgeColor, 'text': badgeText, 'label': priorityLabel};
   }
 
+  double _priorityScore(Map<String, dynamic> report) {
+    final raw = report['priority_score'];
+    if (raw is num) return raw.toDouble();
+    return double.tryParse(raw?.toString() ?? '') ?? 0;
+  }
+
+  bool _isCriticalReport(Map<String, dynamic> report) {
+    return report['is_critical_override'] == true ||
+        _priorityScore(report) > 80;
+  }
+
+  _UrgencyFilter _urgencyOf(Map<String, dynamic> report) {
+    final score = _priorityScore(report);
+    if (score > 60) return _UrgencyFilter.high;
+    if (score > 30) return _UrgencyFilter.medium;
+    return _UrgencyFilter.low;
+  }
+
   String _reporterLabel(Map<String, dynamic> report) {
     final profile = report['profiles'];
     if (profile is Map) {
@@ -109,22 +130,14 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A1128),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF0A1128),
-        elevation: 0,
         toolbarHeight: 68,
         titleSpacing: 4,
         title: Row(
           children: [
-            Container(
+            SizedBox(
               width: 42,
               height: 42,
-              padding: const EdgeInsets.all(4),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-              ),
               child: Image.asset(
                 'assets/images/helphub_crest.png',
                 fit: BoxFit.contain,
@@ -173,82 +186,41 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
             Tab(icon: Icon(Icons.emergency, size: 18), text: 'Emergencies'),
             Tab(icon: Icon(Icons.hourglass_top, size: 18), text: 'Active'),
             Tab(icon: Icon(Icons.check_circle, size: 18), text: 'Resolved'),
-            Tab(icon: Icon(Icons.archive, size: 18), text: 'Archived'),
           ],
         ),
       ),
       drawer: const AdminDrawer(),
-      body: Consumer2<ReportProvider, AdminProvider>(
-        builder: (context, provider, adminProvider, child) {
+      body: Consumer<ReportProvider>(
+        builder: (context, provider, child) {
           if (provider.isLoading && provider.allReports.isEmpty) {
             return const _QueueSkeleton();
           }
 
-          final rawAllReports = provider.allReports;
-          final emergencyReports = rawAllReports
+          final allReports = provider.allReports;
+          final nonCriticalReports = allReports
+              .where((report) => !_isCriticalReport(report))
+              .toList();
+          final emergencyReports = allReports
               .where(
                 (r) =>
-                    r['is_critical_override'] == true &&
-                    ![
-                      'resolved',
-                      'closed',
-                      'archived',
-                      'referred',
-                      'false_alarm',
-                    ].contains(r['status']),
+                    _isCriticalReport(r) &&
+                    ReportStatus.fromDatabase(r['status']).isActive,
               )
               .toList();
-          final activeReports = rawAllReports
-              .where(
-                (r) => ![
-                  'resolved',
-                  'closed',
-                  'archived',
-                  'false_alarm',
-                ].contains(r['status']),
-              )
+          final activeReports = allReports
+              .where((r) => ReportStatus.fromDatabase(r['status']).isActive)
               .toList();
-          final resolvedReports = rawAllReports
-              .where(
-                (r) => [
-                  'resolved',
-                  'closed',
-                  'referred',
-                  'false_alarm',
-                ].contains(r['status']),
-              )
-              .toList();
-
-          final archivedReports = rawAllReports
-              .where((r) => r['status'] == 'archived')
-              .toList();
-
-          final allReports = rawAllReports
-              .where(
-                (r) => ![
-                  'resolved',
-                  'closed',
-                  'archived',
-                  'false_alarm',
-                ].contains(r['status']),
-              )
+          final resolvedReports = allReports
+              .where((r) => ReportStatus.fromDatabase(r['status']).isCompleted)
               .toList();
 
           return TabBarView(
             controller: _tabController,
             children: [
-              _buildReportList(
-                allReports,
-                provider,
-                adminProvider,
-                emptyMsg: 'No reports yet',
-                emptyDetail: 'New community reports will appear here as soon as they are submitted.',
-                emptyIcon: Icons.inbox_rounded,
-              ),
+              _buildUrgencyReportList(nonCriticalReports, provider),
               _buildReportList(
                 emergencyReports,
                 provider,
-                adminProvider,
                 emptyMsg: 'No active emergencies',
                 emptyDetail: 'Everything is calm. Critical SOS reports will surface here immediately.',
                 emptyIcon: Icons.health_and_safety_rounded,
@@ -256,7 +228,6 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
               _buildReportList(
                 activeReports,
                 provider,
-                adminProvider,
                 emptyMsg: 'No active reports',
                 emptyDetail: 'There are no reports currently awaiting action.',
                 emptyIcon: Icons.task_alt_rounded,
@@ -264,19 +235,9 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
               _buildReportList(
                 resolvedReports,
                 provider,
-                adminProvider,
                 emptyMsg: 'No resolved reports yet',
                 emptyDetail: 'Completed response cases will be collected here.',
                 emptyIcon: Icons.inventory_2_rounded,
-              ),
-              _buildReportList(
-                archivedReports,
-                provider,
-                adminProvider,
-                emptyMsg: 'No archived reports',
-                emptyDetail: 'Reports that have been archived for record-keeping will appear here.',
-                emptyIcon: Icons.archive_rounded,
-                isArchiveTab: true,
               ),
             ],
           );
@@ -285,20 +246,92 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
     );
   }
 
-  Widget _buildReportList(
+  Widget _buildUrgencyReportList(
     List<Map<String, dynamic>> reports,
     ReportProvider provider,
-    AdminProvider adminProvider, {
+  ) {
+    final filteredReports = _selectedUrgency == _UrgencyFilter.all
+        ? reports
+        : reports
+              .where((report) => _urgencyOf(report) == _selectedUrgency)
+              .toList();
+    final selectedLabel = switch (_selectedUrgency) {
+      _UrgencyFilter.all => 'reports',
+      _UrgencyFilter.high => 'high-urgency reports',
+      _UrgencyFilter.medium => 'medium-urgency reports',
+      _UrgencyFilter.low => 'low-urgency reports',
+    };
+
+    return Column(
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 12),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            border: Border(bottom: BorderSide(color: AppTheme.outline)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'FILTER BY URGENCY',
+                style: TextStyle(
+                  color: AppTheme.textSecondary,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.7,
+                ),
+              ),
+              const SizedBox(height: 9),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  children: _UrgencyFilter.values.map((filter) {
+                    final count = filter == _UrgencyFilter.all
+                        ? reports.length
+                        : reports
+                              .where((report) => _urgencyOf(report) == filter)
+                              .length;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: _UrgencyChoice(
+                        filter: filter,
+                        count: count,
+                        selected: _selectedUrgency == filter,
+                        onTap: () => setState(() => _selectedUrgency = filter),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: _buildReportList(
+            filteredReports,
+            provider,
+            emptyMsg: 'No $selectedLabel',
+            emptyDetail: _selectedUrgency == _UrgencyFilter.all
+                ? 'New low, medium, and high urgency reports will appear here.'
+                : 'Select another urgency or pull down to refresh the queue.',
+            emptyIcon: Icons.filter_alt_off_rounded,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildReportList(
+    List<Map<String, dynamic>> reports,
+    ReportProvider provider, {
     required String emptyMsg,
     required String emptyDetail,
     required IconData emptyIcon,
-    bool isArchiveTab = false,
   }) {
     return RefreshIndicator(
-      onRefresh: () async {
-        provider.fetchAllReports();
-        adminProvider.fetchRoutingDestinations();
-      },
+      onRefresh: provider.fetchAllReports,
       child: reports.isEmpty
           ? ListView(
               physics: const AlwaysScrollableScrollPhysics(),
@@ -331,15 +364,11 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
                       timeago.format(DateTime.parse(r['created_at'])),
                       reportId: r['id'],
                       provider: provider,
-                      adminProvider: adminProvider,
-                      currentDestinationId: r['routing_destination_id'],
                       evidence: r['report_evidence'],
                       location: r['report_locations'],
                       priorityLabel: badge['label'],
                       currentStatus: r['status'] ?? 'submitted',
-                      isEmergency: r['is_critical_override'] == true,
-                      adminProofUrl: r['admin_proof_url'],
-                      isReadOnly: isArchiveTab,
+                      isEmergency: _isCriticalReport(r),
                     )
                     .animate()
                     .fadeIn(
@@ -559,7 +588,7 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
                       );
                       final success = await provider.updateReportStatus(
                         reportId,
-                        'acknowledged',
+                        ReportStatus.acknowledged,
                       );
                       if (success) {
                         ScaffoldMessenger.of(context).showSnackBar(
@@ -725,144 +754,137 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
     String date, {
     required String reportId,
     required ReportProvider provider,
-    required AdminProvider adminProvider,
-    String? currentDestinationId,
     List<dynamic>? evidence,
     dynamic location,
     String priorityLabel = '',
     String currentStatus = 'submitted',
     bool isEmergency = false,
-    String? adminProofUrl,
-    bool isReadOnly = false,
   }) {
-    String assignedTo = "Unassigned";
-    if (currentDestinationId != null) {
-      final dest = adminProvider.routingDestinations
-          .where((d) => d['id'] == currentDestinationId)
-          .firstOrNull;
-      if (dest != null) assignedTo = dest['destination_name'];
-    }
-
-    final statusLabel = currentStatus.replaceAll('_', ' ').toUpperCase();
-    final statusColor = switch (currentStatus) {
-      'acknowledged' => AppTheme.primaryBlue,
-      'in_progress' => AppTheme.statusProgress,
-      'resolved' => AppTheme.statusLow,
-      'referred' => AppTheme.statusReferred,
-      'false_alarm' => AppTheme.statusHigh,
-      'closed' || 'archived' => AppTheme.statusResolved,
-      _ => AppTheme.textSecondary,
+    final reportStatus = ReportStatus.fromDatabase(currentStatus);
+    final statusLabel = reportStatus.label;
+    final statusColor = switch (reportStatus) {
+      ReportStatus.acknowledged => AppTheme.primaryBlue,
+      ReportStatus.inProgress =>
+        isEmergency ? AppTheme.statusCritical : AppTheme.statusProgress,
+      ReportStatus.resolved => AppTheme.statusLow,
+      ReportStatus.referred => AppTheme.statusReferred,
+      ReportStatus.falseAlarm => AppTheme.statusHigh,
+      ReportStatus.closed || ReportStatus.archived => AppTheme.statusResolved,
+      ReportStatus.submitted => AppTheme.textSecondary,
     };
 
+    // Build context-aware next-status actions based on workflow
     List<Map<String, dynamic>> nextActions = [];
-    if (!isReadOnly && isEmergency) {
-      if (currentStatus == 'submitted') {
+    if (isEmergency) {
+      // Emergency workflow: submitted → acknowledged → in_progress → resolved|referred|false_alarm → closed
+      if (reportStatus == ReportStatus.submitted) {
         nextActions = [
           {
             'label': 'Acknowledge',
             'icon': Icons.check_circle,
-            'status': 'acknowledged',
+            'status': ReportStatus.acknowledged,
             'color': AppTheme.primaryBlue,
           },
         ];
-      } else if (currentStatus == 'acknowledged') {
+      } else if (reportStatus == ReportStatus.acknowledged) {
         nextActions = [
           {
-            'label': 'Mark Responding',
+            'label': 'Mark In Progress',
             'icon': Icons.directions_run,
-            'status': 'in_progress',
+            'status': ReportStatus.inProgress,
             'color': AppTheme.statusCritical,
           },
         ];
-      } else if (currentStatus == 'in_progress') {
+      } else if (reportStatus == ReportStatus.inProgress) {
         nextActions = [
           {
             'label': 'Mark Resolved',
             'icon': Icons.check,
-            'status': 'resolved',
+            'status': ReportStatus.resolved,
             'color': AppTheme.statusLow,
             'requiresDialog': true,
           },
           {
             'label': 'Refer to Authority',
             'icon': Icons.call_made,
-            'status': 'referred',
+            'status': ReportStatus.referred,
             'color': const Color(0xFF0891B2),
           },
           {
             'label': 'Mark False Alarm',
             'icon': Icons.warning_amber,
-            'status': 'false_alarm',
+            'status': ReportStatus.falseAlarm,
             'color': Colors.orange,
           },
         ];
-      } else if ([
-        'resolved',
-        'referred',
-        'false_alarm',
-      ].contains(currentStatus)) {
+      } else if ({
+        ReportStatus.resolved,
+        ReportStatus.referred,
+        ReportStatus.falseAlarm,
+      }.contains(reportStatus)) {
         nextActions = [
           {
             'label': 'Close Report',
             'icon': Icons.folder_off,
-            'status': 'closed',
+            'status': ReportStatus.closed,
             'color': Colors.grey,
           },
         ];
-      } else if (currentStatus == 'closed') {
+      } else if (reportStatus == ReportStatus.closed) {
         nextActions = [
           {
             'label': 'Archive Report',
             'icon': Icons.archive,
-            'status': 'archived',
+            'status': ReportStatus.archived,
             'color': Colors.grey.shade600,
           },
         ];
       }
-    } else if (!isReadOnly) {
-      if (currentStatus == 'submitted') {
+    } else {
+      // Normal workflow: submitted → acknowledged → in_progress → resolved → closed → archived
+      if (reportStatus == ReportStatus.submitted) {
         nextActions = [
           {
             'label': 'Acknowledge / Under Review',
             'icon': Icons.visibility,
-            'status': 'acknowledged',
+            'status': ReportStatus.acknowledged,
             'color': AppTheme.primaryBlue,
           },
         ];
-      } else if (currentStatus == 'acknowledged') {
+      } else if (reportStatus == ReportStatus.acknowledged) {
         nextActions = [
           {
             'label': 'Mark In Progress',
             'icon': Icons.engineering,
-            'status': 'in_progress',
+            'status': ReportStatus.inProgress,
             'color': const Color(0xFF8B5CF6),
           },
         ];
-      } else if (currentStatus == 'in_progress') {
+      } else if (reportStatus == ReportStatus.inProgress) {
         nextActions = [
           {
             'label': 'Mark Resolved',
             'icon': Icons.check,
-            'status': 'resolved',
+            'status': ReportStatus.resolved,
             'color': AppTheme.statusLow,
             'requiresDialog': true,
           },
         ];
-      } else if (currentStatus == 'resolved') {
+      } else if (reportStatus == ReportStatus.resolved) {
         nextActions = [
           {
             'label': 'Close Report',
             'icon': Icons.folder_off,
-            'status': 'closed',
+            'status': ReportStatus.closed,
             'color': Colors.grey,
           },
         ];
-      } else if (currentStatus == 'closed') {
+      } else if (reportStatus == ReportStatus.closed) {
         nextActions = [
           {
             'label': 'Archive Report',
             'icon': Icons.archive,
-            'status': 'archived',
+            'status': ReportStatus.archived,
             'color': Colors.grey.shade600,
           },
         ];
@@ -871,414 +893,427 @@ class _AdminPriorityQueueState extends State<AdminPriorityQueue>
 
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
-      color: Colors.white,
-      elevation: 0,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+      clipBehavior: Clip.antiAlias,
+      elevation: isEmergency ? 3 : 1,
+      shadowColor: (isEmergency ? AppTheme.statusCritical : AppTheme.navy)
+          .withValues(alpha: isEmergency ? 0.16 : 0.08),
+      shape: RoundedRectangleBorder(
+        side: BorderSide(
+          color: isEmergency
+              ? AppTheme.statusCritical.withValues(alpha: 0.35)
+              : AppTheme.outline,
+        ),
+        borderRadius: BorderRadius.circular(AppTheme.radiusLarge),
+      ),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  children: [
-                    _StatusPill(
-                      label: badgeText,
-                      color: badgeColor,
-                      icon: isEmergency
-                          ? Icons.emergency_rounded
-                          : Icons.flag_rounded,
-                      filled: true,
-                    ),
-                    const SizedBox(width: 8),
-                    _StatusPill(
-                      label: statusLabel,
-                      color: statusColor,
-                      icon: Icons.sync_rounded,
-                    ),
-                  ],
-                ),
-                Icon(
-                  Icons.more_horiz_rounded,
-                  color: Colors.grey.shade400,
-                  size: 20,
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Text(
-              title,
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 16,
-                color: Colors.black87,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              subtitle,
-              style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Icon(Icons.location_on, color: Colors.grey.shade500, size: 14),
-                const SizedBox(width: 4),
-                Text(
-                  assignedTo == 'Unassigned'
-                      ? 'Awaiting dispatcher'
-                      : assignedTo,
-                  style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-                ),
-                const SizedBox(width: 16),
-                Icon(Icons.access_time, color: Colors.grey.shade500, size: 14),
-                const SizedBox(width: 4),
-                Text(
-                  'Reported: $date',
-                  style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-                ),
-              ],
-            ),
-            if ((evidence != null && evidence.isNotEmpty) ||
-                adminProofUrl != null) ...[
-              const SizedBox(height: 16),
-              const Text(
-                'Evidence & Proof',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.grey,
-                ),
-              ),
-              const SizedBox(height: 8),
-              SizedBox(
-                height: 70,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  children: [
-                    if (evidence != null && evidence.isNotEmpty)
-                      ...evidence.map((e) {
-                        final storagePath = e['storage_path'];
-                        final url = provider.getEvidenceUrl(storagePath);
-                        return _buildThumbnail(url, false);
-                      }).toList(),
-                    if (adminProofUrl != null)
-                      _buildThumbnail(adminProofUrl, true),
-                  ],
-                ),
-              ),
-            ],
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                if (nextActions.isNotEmpty)
-                  Expanded(
-                    child: ElevatedButton(
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor:
-                            nextActions.first['color'] ?? AppTheme.primaryBlue,
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
+            Container(width: 5, color: badgeColor),
+            Expanded(
+              child: Column(
+                children: [
+                  ListTile(
+                    contentPadding: const EdgeInsets.fromLTRB(15, 12, 14, 8),
+                    leading: Container(
+                      width: 56,
+                      height: 58,
+                      decoration: BoxDecoration(
+                        color: badgeColor.withValues(alpha: 0.09),
+                        borderRadius: BorderRadius.circular(15),
+                        border: Border.all(
+                          color: badgeColor.withValues(alpha: 0.18),
                         ),
                       ),
-                      onPressed: () async {
-                        final action = nextActions.first;
-                        if (action['requiresDialog'] == true) {
-                          _showResolveDialog(context, provider, reportId);
-                        } else {
-                          final success = await provider.updateReportStatus(
-                            reportId,
-                            action['status'],
-                          );
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  success
-                                      ? 'Status updated to "${action['label']}"'
-                                      : (provider.errorMessage ??
-                                            'Update failed'),
-                                ),
-                                backgroundColor: success
-                                    ? Colors.green
-                                    : Colors.red,
-                              ),
-                            );
-                          }
-                        }
-                      },
-                      child: Text(nextActions.first['label']),
-                    ),
-                  ),
-                if (nextActions.isNotEmpty) const SizedBox(width: 8),
-                Expanded(
-                  child: OutlinedButton(
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: Colors.grey.shade700,
-                      side: BorderSide(color: Colors.grey.shade300),
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(
+                            score,
+                            style: TextStyle(
+                              color: badgeColor,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 20,
+                              height: 1,
+                            ),
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            'SCORE',
+                            style: TextStyle(
+                              color: badgeColor,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.7,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                    onPressed: () {
-                      _openDetailsSheet(
-                        context,
+                    title: Padding(
+                      padding: const EdgeInsets.only(bottom: 3),
+                      child: Text(
                         title,
-                        badgeText,
-                        badgeColor,
-                        statusLabel,
-                        statusColor,
-                        priorityLabel,
-                        isEmergency,
-                        nextActions,
-                        provider,
-                        reportId,
-                        adminProvider,
-                        currentDestinationId,
-                      );
-                    },
-                    child: const Text('View Details'),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildThumbnail(String url, bool isProof) {
-    return GestureDetector(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => _FullScreenImageViewer(url: url)),
-        );
-      },
-      child: Container(
-        margin: const EdgeInsets.only(right: 8),
-        width: 70,
-        height: 70,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(8),
-          image: DecorationImage(image: NetworkImage(url), fit: BoxFit.cover),
-        ),
-        child: isProof
-            ? Align(
-                alignment: Alignment.bottomCenter,
-                child: Container(
-                  width: double.infinity,
-                  color: Colors.black54,
-                  padding: const EdgeInsets.symmetric(vertical: 2),
-                  child: const Text(
-                    'Resolution Proof',
-                    style: TextStyle(color: Colors.white, fontSize: 8),
-                    textAlign: TextAlign.center,
-                  ),
-                ),
-              )
-            : null,
-      ),
-    );
-  }
-
-  void _openDetailsSheet(
-    BuildContext context,
-    String title,
-    String badgeText,
-    Color badgeColor,
-    String statusLabel,
-    Color statusColor,
-    String priorityLabel,
-    bool isEmergency,
-    List<Map<String, dynamic>> nextActions,
-    ReportProvider provider,
-    String reportId,
-    AdminProvider adminProvider,
-    String? currentDestinationId,
-  ) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      builder: (ctx) => ConstrainedBox(
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.sizeOf(ctx).height * 0.82,
-        ),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 4, 20, 18),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                    ),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Container(
-                          width: 42,
-                          height: 42,
-                          decoration: BoxDecoration(
-                            color: badgeColor.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Icon(
-                            isEmergency
-                                ? Icons.emergency_rounded
-                                : Icons.assignment_rounded,
-                            color: badgeColor,
+                        Text(
+                          subtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: AppTheme.textSecondary,
                           ),
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            title,
-                            style: Theme.of(ctx).textTheme.titleLarge,
-                          ),
+                        const SizedBox(height: 9),
+                        Wrap(
+                          spacing: 7,
+                          runSpacing: 6,
+                          children: [
+                            _StatusPill(
+                              label: badgeText,
+                              color: badgeColor,
+                              icon: isEmergency
+                                  ? Icons.emergency_rounded
+                                  : Icons.flag_rounded,
+                              filled: true,
+                            ),
+                            _StatusPill(
+                              label: statusLabel,
+                              color: statusColor,
+                              icon: Icons.sync_rounded,
+                            ),
+                          ],
                         ),
+                        if (location != null) ...[
+                          const SizedBox(height: 8),
+                          InkWell(
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => _FullScreenMapViewer(
+                                    lat: location["latitude"],
+                                    lng: location["longitude"],
+                                  ),
+                                ),
+                              );
+                            },
+                            child: Row(
+                              children: [
+                                const Icon(
+                                  Icons.location_on_rounded,
+                                  color: AppTheme.primaryBlue,
+                                  size: 15,
+                                ),
+                                const SizedBox(width: 5),
+                                const Text(
+                                  'Open pinned location',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: AppTheme.primaryBlue,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                const SizedBox(width: 2),
+                                const Icon(
+                                  Icons.arrow_outward_rounded,
+                                  color: AppTheme.primaryBlue,
+                                  size: 13,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                       ],
                     ),
-                    const SizedBox(height: 12),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
+                    trailing: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        _StatusPill(
-                          label: badgeText,
-                          color: badgeColor,
-                          icon: Icons.flag_rounded,
-                          filled: true,
-                        ),
-                        _StatusPill(
-                          label: statusLabel,
-                          color: statusColor,
-                          icon: Icons.sync_rounded,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      priorityLabel,
-                      style: Theme.of(ctx).textTheme.bodyMedium,
-                    ),
-                  ],
-                ),
-              ),
-              if (nextActions.isNotEmpty) ...[
-                const Divider(),
-                const _SheetSectionLabel('NEXT ACTION'),
-                ...nextActions.map(
-                  (action) => Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 3,
-                    ),
-                    child: ListTile(
-                      tileColor: (action['color'] as Color).withValues(
-                        alpha: 0.07,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      leading: Container(
-                        width: 38,
-                        height: 38,
-                        decoration: BoxDecoration(
-                          color: (action['color'] as Color).withValues(
-                            alpha: 0.12,
+                        Text(
+                          date,
+                          style: const TextStyle(
+                            color: AppTheme.textSecondary,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
                           ),
-                          borderRadius: BorderRadius.circular(10),
                         ),
-                        child: Icon(
-                          action['icon'],
-                          color: action['color'],
+                        const SizedBox(height: 8),
+                        const Icon(
+                          Icons.more_horiz_rounded,
+                          color: AppTheme.textSecondary,
                           size: 20,
                         ),
-                      ),
-                      title: Text(
-                        action['label'],
-                        style: const TextStyle(
-                          color: AppTheme.onSurfaceColor,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      trailing: Icon(
-                        Icons.arrow_forward_rounded,
-                        color: action['color'],
-                        size: 19,
-                      ),
-                      onTap: () async {
-                        Navigator.pop(ctx);
-                        if (action['requiresDialog'] == true) {
-                          _showResolveDialog(context, provider, reportId);
-                        } else {
-                          final success = await provider.updateReportStatus(
-                            reportId,
-                            action['status'],
-                          );
-                          if (context.mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  success
-                                      ? 'Status updated to "${action['label']}"'
-                                      : (provider.errorMessage ??
-                                            'Update failed'),
+                      ],
+                    ),
+                    onTap: () {
+                      showModalBottomSheet(
+                        context: context,
+                        isScrollControlled: true,
+                        useSafeArea: true,
+                        builder: (ctx) => ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxHeight: MediaQuery.sizeOf(ctx).height * 0.82,
+                          ),
+                          child: SingleChildScrollView(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    20,
+                                    4,
+                                    20,
+                                    18,
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Container(
+                                            width: 42,
+                                            height: 42,
+                                            decoration: BoxDecoration(
+                                              color: badgeColor.withValues(
+                                                alpha: 0.1,
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(12),
+                                            ),
+                                            child: Icon(
+                                              isEmergency
+                                                  ? Icons.emergency_rounded
+                                                  : Icons.assignment_rounded,
+                                              color: badgeColor,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          Expanded(
+                                            child: Text(
+                                              title,
+                                              style: Theme.of(ctx)
+                                                  .textTheme
+                                                  .titleLarge,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 12),
+                                      Wrap(
+                                        spacing: 8,
+                                        runSpacing: 8,
+                                        children: [
+                                          _StatusPill(
+                                            label: badgeText,
+                                            color: badgeColor,
+                                            icon: Icons.flag_rounded,
+                                            filled: true,
+                                          ),
+                                          _StatusPill(
+                                            label: statusLabel,
+                                            color: statusColor,
+                                            icon: Icons.sync_rounded,
+                                          ),
+                                        ],
+                                      ),
+                                      const SizedBox(height: 10),
+                                      Text(
+                                        priorityLabel,
+                                        style: Theme.of(ctx)
+                                            .textTheme
+                                            .bodyMedium,
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                                backgroundColor: success
-                                    ? Colors.green
-                                    : Colors.red,
-                              ),
-                            );
-                          }
-                        }
-                      },
-                    ),
+                                // Workflow Status Actions
+                                if (nextActions.isNotEmpty) ...[
+                                  const Divider(),
+                                  const _SheetSectionLabel('NEXT ACTION'),
+                                  ...nextActions.map(
+                                    (action) => Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 3,
+                                      ),
+                                      child: ListTile(
+                                        tileColor: (action['color'] as Color)
+                                            .withValues(alpha: 0.07),
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            14,
+                                          ),
+                                        ),
+                                        leading: Container(
+                                          width: 38,
+                                          height: 38,
+                                          decoration: BoxDecoration(
+                                            color: (action['color'] as Color)
+                                                .withValues(alpha: 0.12),
+                                            borderRadius: BorderRadius.circular(
+                                              10,
+                                            ),
+                                          ),
+                                          child: Icon(
+                                            action['icon'],
+                                            color: action['color'],
+                                            size: 20,
+                                          ),
+                                        ),
+                                        title: Text(
+                                          action['label'],
+                                          style: const TextStyle(
+                                            color: AppTheme.onSurfaceColor,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                        trailing: Icon(
+                                          Icons.arrow_forward_rounded,
+                                          color: action['color'],
+                                          size: 19,
+                                        ),
+                                        onTap: () async {
+                                          final messenger =
+                                              ScaffoldMessenger.of(context);
+                                          Navigator.pop(ctx);
+                                          if (action['requiresDialog'] ==
+                                              true) {
+                                            _showResolveDialog(
+                                              context,
+                                              provider,
+                                              reportId,
+                                            );
+                                          } else {
+                                            final success = await provider
+                                                .updateReportStatus(
+                                                  reportId,
+                                                  action['status']
+                                                      as ReportStatus,
+                                                );
+                                            messenger.showSnackBar(
+                                              SnackBar(
+                                                content: Text(
+                                                  success
+                                                      ? 'Status updated to "${action['label']}"'
+                                                      : (provider
+                                                                .errorMessage ??
+                                                            'Update failed'),
+                                                ),
+                                                backgroundColor: success
+                                                    ? Colors.green
+                                                    : Colors.red,
+                                              ),
+                                            );
+                                          }
+                                        },
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                                const SizedBox(height: 16),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
                   ),
-                ),
-              ],
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 14),
-                child: Divider(),
-              ),
-              const _SheetSectionLabel('DISPATCH TEAM'),
-              ...adminProvider.routingDestinations.map(
-                (dest) => ListTile(
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 20),
-                  leading: Container(
-                    width: 38,
-                    height: 38,
-                    decoration: BoxDecoration(
-                      color: AppTheme.surfaceMuted,
-                      borderRadius: BorderRadius.circular(10),
+                  if (evidence != null && evidence.isNotEmpty)
+                    Padding(
+                      padding: const EdgeInsets.only(
+                        left: 12,
+                        right: 12,
+                        bottom: 12,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Evidence Photos',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.grey,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          SizedBox(
+                            height: 90,
+                            child: ListView.builder(
+                              scrollDirection: Axis.horizontal,
+                              itemCount: evidence.length,
+                              itemBuilder: (context, index) {
+                                final storagePath =
+                                    evidence[index]['storage_path'];
+                                final url = provider.getEvidenceUrl(
+                                  storagePath,
+                                );
+                                return GestureDetector(
+                                  onTap: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) =>
+                                            _FullScreenImageViewer(url: url),
+                                      ),
+                                    );
+                                  },
+                                  child: Stack(
+                                    children: [
+                                      Container(
+                                        margin: const EdgeInsets.only(right: 8),
+                                        width: 90,
+                                        height: 90,
+                                        decoration: BoxDecoration(
+                                          borderRadius: BorderRadius.circular(
+                                            10,
+                                          ),
+                                          image: DecorationImage(
+                                            image: NetworkImage(url),
+                                            fit: BoxFit.cover,
+                                          ),
+                                        ),
+                                      ),
+                                      Positioned(
+                                        bottom: 4,
+                                        right: 12,
+                                        child: Container(
+                                          padding: const EdgeInsets.all(2),
+                                          decoration: BoxDecoration(
+                                            color: Colors.black54,
+                                            borderRadius: BorderRadius.circular(
+                                              4,
+                                            ),
+                                          ),
+                                          child: const Icon(
+                                            Icons.fullscreen,
+                                            color: Colors.white,
+                                            size: 16,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
-                    child: const Icon(
-                      Icons.local_shipping_rounded,
-                      color: AppTheme.primaryBlue,
-                      size: 20,
-                    ),
-                  ),
-                  title: Text(dest['destination_name']),
-                  trailing: currentDestinationId == dest['id']
-                      ? const Icon(Icons.check, color: AppTheme.primaryBlue)
-                      : null,
-                  onTap: () {
-                    adminProvider.assignReportDestination(reportId, dest['id']);
-                    Navigator.pop(ctx);
-                  },
-                ),
+                ],
               ),
-              const SizedBox(height: 16),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -1447,6 +1482,113 @@ class _EmptyQueueState extends StatelessWidget {
               .animate()
               .fadeIn(duration: 350.ms)
               .slideY(begin: 0.04, end: 0, curve: Curves.easeOutCubic),
+    );
+  }
+}
+
+class _UrgencyChoice extends StatelessWidget {
+  const _UrgencyChoice({
+    required this.filter,
+    required this.count,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final _UrgencyFilter filter;
+  final int count;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = switch (filter) {
+      _UrgencyFilter.all => 'All priorities',
+      _UrgencyFilter.high => 'High',
+      _UrgencyFilter.medium => 'Medium',
+      _UrgencyFilter.low => 'Low',
+    };
+    final color = switch (filter) {
+      _UrgencyFilter.all => AppTheme.primaryBlue,
+      _UrgencyFilter.high => AppTheme.statusHigh,
+      _UrgencyFilter.medium => AppTheme.statusMedium,
+      _UrgencyFilter.low => AppTheme.statusLow,
+    };
+    final foreground = selected && filter == _UrgencyFilter.medium
+        ? AppTheme.navy
+        : selected
+        ? Colors.white
+        : AppTheme.onSurfaceColor;
+
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: '$label, $count reports',
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(20),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(20),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOut,
+            height: 38,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              color: selected ? color : Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: selected ? color : color.withValues(alpha: 0.45),
+              ),
+              boxShadow: selected
+                  ? [
+                      BoxShadow(
+                        color: color.withValues(alpha: 0.18),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: foreground,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(width: 7),
+                Container(
+                  constraints: const BoxConstraints(minWidth: 21),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: selected
+                        ? Colors.white.withValues(alpha: 0.22)
+                        : color.withValues(alpha: 0.11),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    '$count',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: foreground,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

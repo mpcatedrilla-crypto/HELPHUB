@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
+import '../models/report_status.dart';
 import '../providers/report_provider.dart';
 import '../theme/app_theme.dart';
 
@@ -9,19 +11,19 @@ class ReportTracking extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('My Reports'),
-      ),
+      appBar: AppBar(title: const Text('My Reports')),
       body: Consumer<ReportProvider>(
         builder: (context, provider, child) {
           if (provider.isLoading && provider.myReports.isEmpty) {
             return const Center(child: CircularProgressIndicator());
           }
-          
+
           if (provider.myReports.isEmpty) {
-            return const Center(child: Text('You have not submitted any reports yet.'));
+            return const Center(
+              child: Text('You have not submitted any reports yet.'),
+            );
           }
-          
+
           return RefreshIndicator(
             onRefresh: provider.fetchMyReports,
             child: ListView.builder(
@@ -29,17 +31,33 @@ class ReportTracking extends StatelessWidget {
               itemCount: provider.myReports.length,
               itemBuilder: (context, index) {
                 final report = provider.myReports[index];
-                
-                Color statusColor = AppTheme.statusMedium;
-                if (report['status'] == 'submitted') statusColor = Colors.orange;
-                if (report['status'] == 'resolved') statusColor = AppTheme.statusResolved;
-                
-                final categoryName = report['concern_types'] != null ? report['concern_types']['category_name'] : 'Unknown';
-                
+                final reportStatus = ReportStatus.fromDatabase(
+                  report['status'],
+                );
+                final statusColor = switch (reportStatus) {
+                  ReportStatus.submitted => Colors.orange,
+                  ReportStatus.acknowledged => AppTheme.primaryBlue,
+                  ReportStatus.inProgress => AppTheme.statusProgress,
+                  ReportStatus.resolved => AppTheme.statusResolved,
+                  ReportStatus.referred => AppTheme.statusReferred,
+                  ReportStatus.falseAlarm => AppTheme.statusHigh,
+                  ReportStatus.closed ||
+                  ReportStatus.archived => AppTheme.textSecondary,
+                };
+
+                final categoryName = report['concern_types'] != null
+                    ? report['concern_types']['category_name']
+                    : 'Unknown';
+
                 return Card(
                   margin: const EdgeInsets.only(bottom: 12),
                   child: InkWell(
-                    onTap: () => _showReportDetails(context, report, statusColor, categoryName),
+                    onTap: () => _showReportDetails(
+                      context,
+                      report,
+                      statusColor,
+                      categoryName,
+                    ),
                     child: Padding(
                       padding: const EdgeInsets.all(16.0),
                       child: Column(
@@ -51,24 +69,37 @@ class ReportTracking extends StatelessWidget {
                               Expanded(
                                 child: Text(
                                   report['title'] ?? 'No Title',
-                                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                  ),
                                 ),
                               ),
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 12,
+                                  vertical: 6,
+                                ),
                                 decoration: BoxDecoration(
                                   color: statusColor.withOpacity(0.1),
                                   borderRadius: BorderRadius.circular(20),
                                 ),
                                 child: Text(
-                                  (report['status'] ?? 'Unknown').toString().toUpperCase(),
-                                  style: TextStyle(color: statusColor, fontWeight: FontWeight.bold, fontSize: 10),
+                                  reportStatus.label,
+                                  style: TextStyle(
+                                    color: statusColor,
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 10,
+                                  ),
                                 ),
                               ),
                             ],
                           ),
                           const SizedBox(height: 8),
-                          Text(categoryName, style: const TextStyle(color: Colors.grey)),
+                          Text(
+                            categoryName,
+                            style: const TextStyle(color: Colors.grey),
+                          ),
                         ],
                       ),
                     ),
@@ -82,7 +113,12 @@ class ReportTracking extends StatelessWidget {
     );
   }
 
-  void _showReportDetails(BuildContext context, Map<String, dynamic> report, Color statusColor, String categoryName) {
+  void _showReportDetails(
+    BuildContext context,
+    Map<String, dynamic> report,
+    Color statusColor,
+    String categoryName,
+  ) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -101,20 +137,44 @@ class ReportTracking extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(report['title'] ?? 'No Title', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                  Text(
+                    report['title'] ?? 'No Title',
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                   const SizedBox(height: 8),
-                  Text(categoryName, style: const TextStyle(color: Colors.grey)),
+                  Text(
+                    categoryName,
+                    style: const TextStyle(color: Colors.grey),
+                  ),
                   const Divider(height: 32),
-                  const Text('Description', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const Text(
+                    'Description',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
                   const SizedBox(height: 8),
                   Text(report['description'] ?? 'No description provided.'),
                   const Divider(height: 32),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      _DetailItem(label: 'Score', value: '${report['priority_score']}', isHighlight: true),
-                      _DetailItem(label: 'Status', value: report['status']?.toString().toUpperCase() ?? 'N/A', color: statusColor),
-                      _DetailItem(label: 'Urgency', value: '${report['resident_declared_urgency']}/5'),
+                      _DetailItem(
+                        label: 'Score',
+                        value: '${report['priority_score']}',
+                        isHighlight: true,
+                      ),
+                      _DetailItem(
+                        label: 'Status',
+                        value: ReportStatus.fromDatabase(report['status'])
+                            .label,
+                        color: statusColor,
+                      ),
+                      _DetailItem(
+                        label: 'Urgency',
+                        value: '${report['resident_declared_urgency']}/5',
+                      ),
                     ],
                   ),
                   const SizedBox(height: 32),
@@ -141,7 +201,12 @@ class _DetailItem extends StatelessWidget {
   final bool isHighlight;
   final Color? color;
 
-  const _DetailItem({required this.label, required this.value, this.isHighlight = false, this.color});
+  const _DetailItem({
+    required this.label,
+    required this.value,
+    this.isHighlight = false,
+    this.color,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -154,7 +219,8 @@ class _DetailItem extends StatelessWidget {
           value,
           style: TextStyle(
             fontWeight: FontWeight.bold,
-            color: color ?? (isHighlight ? AppTheme.primaryBlue : Colors.black87),
+            color:
+                color ?? (isHighlight ? AppTheme.primaryBlue : Colors.black87),
           ),
         ),
       ],

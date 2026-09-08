@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:provider/provider.dart';
 
+import '../models/report_status.dart';
 import '../providers/admin_provider.dart';
 import '../providers/auth_provider.dart';
 import '../providers/profile_provider.dart';
@@ -190,7 +191,7 @@ class _ModernResidentDashboardState extends State<ModernResidentDashboard> {
                                       title: 'My Reports',
                                       subtitle: 'View submitted concerns',
                                       icon: Icons.fact_check_outlined,
-                                      badge: reports.activeReportsCount,
+                                      badge: reports.totalReportsCount,
                                       locked: !profile.isVerified,
                                       onTap: () => _openProtectedFeature(
                                         profile,
@@ -676,7 +677,7 @@ class _ActionCard extends StatelessWidget {
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
-                      badge > 9 ? '9+' : '$badge',
+                      badge > 99 ? '99+' : '$badge',
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                         color: Colors.white,
@@ -916,18 +917,18 @@ class _RecentReportCard extends StatelessWidget {
   }
 
   (Color, String) _status(String status) {
-    switch (status) {
-      case 'resolved':
-        return (const Color(0xFF42B649), 'RESOLVED');
-      case 'in_progress':
-      case 'responding':
-        return (const Color(0xFFF0B323), 'IN PROGRESS');
-      case 'acknowledged':
-      case 'pending_confirmation':
-        return (const Color(0xFFFF7043), 'UNDER REVIEW');
-      default:
-        return (_ModernResidentDashboardState._purple, 'SUBMITTED');
-    }
+    final reportStatus = ReportStatus.fromDatabase(status);
+    final color = switch (reportStatus) {
+      ReportStatus.resolved => const Color(0xFF42B649),
+      ReportStatus.inProgress => const Color(0xFFF0B323),
+      ReportStatus.acknowledged => const Color(0xFFFF7043),
+      ReportStatus.referred => const Color(0xFF0891B2),
+      ReportStatus.falseAlarm => const Color(0xFFCE5A0A),
+      ReportStatus.closed => const Color(0xFF64748B),
+      ReportStatus.archived => const Color(0xFF475569),
+      ReportStatus.submitted => _ModernResidentDashboardState._purple,
+    };
+    return (color, reportStatus.label);
   }
 }
 

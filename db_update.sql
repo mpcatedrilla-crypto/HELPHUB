@@ -1,6 +1,6 @@
--- 1. Add the missing status to the enum
-ALTER TYPE report_status ADD VALUE IF NOT EXISTS 'pending_confirmation';
+-- Legacy one-off helper. Prefer the ordered files in supabase/migrations.
+-- Resident confirmation is intentionally not part of the canonical lifecycle.
 
--- 2. Add the missing columns to the reports table
-ALTER TABLE reports ADD COLUMN IF NOT EXISTS admin_resolution_notes TEXT;
-ALTER TABLE reports ADD COLUMN IF NOT EXISTS admin_proof_url TEXT;
+ALTER TABLE public.reports
+  ADD COLUMN IF NOT EXISTS admin_resolution_notes text,
+  ADD COLUMN IF NOT EXISTS admin_proof_url text;

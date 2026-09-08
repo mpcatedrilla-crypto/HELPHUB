@@ -30,51 +30,6 @@ class AuthProvider extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
   String? get userName => _userName;
 
-  AuthProvider() {
-    _initializeAuth();
-  }
-
-  Future<void> _initializeAuth() async {
-    final user = _supabase.auth.currentUser;
-    if (user != null) {
-      await _fetchProfile(user.id, user.email ?? '');
-    } else {
-      _setState(AuthState.initial); // or unauthenticated
-    }
-
-    _supabase.auth.onAuthStateChange.listen((data) {
-      final AuthChangeEvent event = data.event;
-      if (event == AuthChangeEvent.signedOut) {
-        _role = UserRole.guest;
-        _userName = null;
-        _setState(AuthState.initial);
-      }
-    });
-  }
-
-  Future<void> _fetchProfile(String userId, String email) async {
-    try {
-      final profile = await _supabase
-          .from('profiles')
-          .select()
-          .eq('id', userId)
-          .single();
-      if (profile['status'] == 'rejected') {
-        _errorMessage = 'This account verification request was rejected.';
-        await _supabase.auth.signOut();
-        _setState(AuthState.denied);
-        return;
-      }
-      _role = profile['role'] == 'admin' ? UserRole.admin : UserRole.resident;
-      _userName = profile['full_name'] ?? email;
-      _setState(AuthState.authenticated);
-    } catch (e) {
-      // Profile fetch failed, force sign out to prevent broken state
-      await _supabase.auth.signOut();
-      _setState(AuthState.initial);
-    }
-  }
-
   Future<void> login(String email, String password) async {
     _setState(AuthState.loading);
     try {

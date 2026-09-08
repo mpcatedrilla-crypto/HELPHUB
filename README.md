@@ -1,17 +1,23 @@
-# helphub
+# HelpHub
 
-A new Flutter project.
+HelpHub is a Flutter and Supabase community emergency reporting and response
+system.
 
-## Getting Started
+## Report lifecycle
 
-This project is a starting point for a Flutter application.
+The canonical lifecycle is:
 
-A few resources to get you started if this is your first Flutter project:
+`submitted -> acknowledged -> in_progress -> resolved/referred/false_alarm -> closed -> archived`
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+Resident confirmation is **not required** for resolution or closure. A
+resident may be offline, unreachable, or unable to respond during an emergency,
+so confirmation cannot safely block operational closure. Approved
+administrators own status transitions; residents can view the current status,
+resolution notes, and evidence.
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+If resident feedback or dispute handling is added later, it should be modeled
+as a separate feedback or follow-up record. It must not overload the report
+status or restore the removed `pending_confirmation` state.
+
+Apply the SQL files in `supabase/migrations` in filename order before deploying
+the matching Flutter build.
