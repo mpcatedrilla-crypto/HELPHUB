@@ -264,6 +264,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
             ),
             _Field(
               label: 'Email Address',
+              required: true,
               controller: _email,
               hint: 'Enter your email address',
               keyboard: TextInputType.emailAddress,
@@ -271,7 +272,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
               autofillHints: const [AutofillHints.email],
               validator: (value) {
                 final email = value?.trim() ?? '';
-                if (email.isEmpty) return null;
+                if (email.isEmpty) return 'Email address is required';
                 return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(email)
                     ? null
                     : 'Enter a valid email address';

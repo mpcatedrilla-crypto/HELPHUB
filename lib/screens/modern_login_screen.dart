@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/auth_provider.dart';
+import 'password_recovery_screen.dart';
 import 'register_screen.dart';
 
 class ModernLoginScreen extends StatefulWidget {
@@ -89,9 +90,11 @@ class _ModernLoginScreenState extends State<ModernLoginScreen> {
 
   void _forgotPassword() {
     FocusManager.instance.primaryFocus?.unfocus();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Password recovery will be available soon.'),
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) =>
+            ForgotPasswordScreen(initialEmail: _emailController.text.trim()),
       ),
     );
   }

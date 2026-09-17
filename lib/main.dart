@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -21,9 +23,10 @@ import 'providers/admin_provider.dart';
 import 'providers/profile_provider.dart';
 import 'screens/modern_login_screen.dart';
 import 'screens/profile_screen.dart';
+import 'screens/password_recovery_screen.dart';
 import 'widgets/verified_resident_gate.dart';
 
-import 'package:supabase_flutter/supabase_flutter.dart' hide AuthState;
+import 'package:supabase_flutter/supabase_flutter.dart' as supabase;
 
 import 'env.dart';
 import 'firebase_options.dart';
@@ -38,7 +41,7 @@ void main() async {
 
   await Future.wait([
     Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform),
-    Supabase.initialize(
+    supabase.Supabase.initialize(
       url: Env.supabaseUrl,
       publishableKey: Env.supabaseAnonKey,
     ),
@@ -68,12 +71,46 @@ void main() async {
   );
 }
 
-class HelpHubApp extends StatelessWidget {
+class HelpHubApp extends StatefulWidget {
   const HelpHubApp({super.key});
+
+  @override
+  State<HelpHubApp> createState() => _HelpHubAppState();
+}
+
+class _HelpHubAppState extends State<HelpHubApp> {
+  final _navigatorKey = GlobalKey<NavigatorState>();
+  StreamSubscription<supabase.AuthState>? _authSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    _authSubscription = supabase.Supabase.instance.client.auth.onAuthStateChange
+        .listen((authState) {
+          if (authState.event != supabase.AuthChangeEvent.passwordRecovery) {
+            return;
+          }
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _navigatorKey.currentState?.pushAndRemoveUntil(
+              MaterialPageRoute<void>(
+                builder: (_) => const ResetPasswordScreen(),
+              ),
+              (_) => false,
+            );
+          });
+        });
+  }
+
+  @override
+  void dispose() {
+    _authSubscription?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      navigatorKey: _navigatorKey,
       title: 'HelpHub',
       theme: AppTheme.lightTheme,
       debugShowCheckedModeBanner: false,
@@ -81,6 +118,7 @@ class HelpHubApp extends StatelessWidget {
       routes: {
         '/': (context) => const ModernLoginScreen(),
         '/login': (context) => const ModernLoginScreen(),
+        '/forgot-password': (context) => const ForgotPasswordScreen(),
         '/resident_home': (context) => const ModernResidentDashboard(),
         '/emergency_sos': (context) => const VerifiedResidentGate(
           featureName: 'Emergency SOS',

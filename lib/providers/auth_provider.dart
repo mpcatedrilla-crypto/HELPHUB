@@ -134,20 +134,16 @@ class AuthProvider extends ChangeNotifier {
           );
 
       final trimmedEmail = email.trim();
-      final AuthResponse res;
-      if (trimmedEmail.isNotEmpty) {
-        res = await _supabase.auth.signUp(
-          email: trimmedEmail,
-          password: password,
-          data: metadata,
-        );
-      } else {
-        res = await _supabase.auth.signUp(
-          phone: _normalizePhilippinePhone(phone),
-          password: password,
-          data: metadata,
-        );
+      if (trimmedEmail.isEmpty) {
+        _errorMessage = 'Email address is required for account recovery.';
+        _setState(AuthState.error);
+        return false;
       }
+      final AuthResponse res = await _supabase.auth.signUp(
+        email: trimmedEmail,
+        password: password,
+        data: metadata,
+      );
 
       if (res.user != null) {
         final basicProfile = <String, dynamic>{
@@ -192,16 +188,6 @@ class AuthProvider extends ChangeNotifier {
       _setState(AuthState.error);
       return false;
     }
-  }
-
-  String _normalizePhilippinePhone(String value) {
-    final trimmed = value.trim();
-    final digits = trimmed.replaceAll(RegExp(r'\D'), '');
-    if (trimmed.startsWith('+')) return '+$digits';
-    if (digits.startsWith('09')) return '+63${digits.substring(1)}';
-    if (digits.startsWith('9')) return '+63$digits';
-    if (digits.startsWith('63')) return '+$digits';
-    return '+$digits';
   }
 
   Future<void> logout() async {
